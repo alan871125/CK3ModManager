@@ -1,0 +1,19 @@
+env/
+venv/
+.env/
+.venv/
+__pycache__/
+.vscode/
+backup/
+.backup/
+
+# Build files
+build/
+dist/
+*.spec
+
+*.json
+
+# artifacts
+/profiles
+settings.json
