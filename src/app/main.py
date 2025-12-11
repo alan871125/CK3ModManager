@@ -32,6 +32,8 @@ logging.getLogger('mod_analyzer').setLevel(logging.DEBUG)
 
 class QTextEditLogger(logging.Handler, QtCore.QObject):
     appendPlainText = QtCore.pyqtSignal(str)
+    flushOnClose = False  # Prevent logging.shutdown() from accessing deleted Qt object
+    
     def __init__(self, parent):
         super().__init__()
         QtCore.QObject.__init__(self)
@@ -92,6 +94,8 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.selected_error_node: Optional[ErrorTreeNode] = None
         self.selected_conflict_node: Optional[ConflictTreeNode] = None
         
+        log_level = logging.DEBUG if self.settings.debug else logging.INFO
+        logger.setLevel(log_level)
         self.initUI()
     
     def closeEvent(self, event):
@@ -108,7 +112,6 @@ class CK3ModManagerApp(qt.QMainWindow):
         if self.file_tree_worker and self.file_tree_worker.isRunning():
             self.file_tree_worker.terminate()
             self.file_tree_worker.wait()
-        
         event.accept()
     
     def initUI(self):
@@ -518,8 +521,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             '[%(asctime)s,%(msecs)03d][%(levelname)s] %(message)s',
             datefmt='%H:%M:%S'
         ))
-        logging.getLogger().addHandler(self.logger)
-        logging.getLogger().setLevel(logging.INFO)
+        logger.addHandler(self.logger)
         # self.logs.setReadOnly(True)
         log_layout.addWidget(self.logger.widget)
         # Set minimum size for log group to prevent collapse
