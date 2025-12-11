@@ -44,6 +44,7 @@ class Mod:
     file: Optional[Path] = field(default=None, repr=False, compare=False)  # Path to descriptor.mod file
     # If this is True, enabled mods sort before disabled mods
     _enabled_first: bool = field(default = False, init=True, repr=False, compare=False)
+    _duplicates: set["Mod"] = field(default_factory=set, init=False, repr=False, compare=False)
     def __post_init__(self):
         # Set initial sort index from enabled
         object.__setattr__(self, "_sort_index", 0 if bool(self.enabled and self._enabled_first) else 1)
@@ -129,3 +130,5 @@ class Mod:
             elif num0 > num1:
                 return False
         return False  # Versions are equal up to the length of the shorter one
+    def __hash__(self):
+        return hash((self.name, self.path))

@@ -47,10 +47,24 @@ class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
                 _mod = self.setdefault(mod.name, mod)
                 if _mod is not mod:
                     logger.warning("Mod with duplicate name found: %s", mod)
-                self[mod.name] = mod
+                    self.add_duplicate(mod)
+                else:
+                    self[mod.name] = mod
                 if no_order_provided:
                     mod.load_order = i
                     # self._load_order.append(mod.name)
+                    
+    def add_duplicate(self, mod: Mod):
+        """Renames duplicate mod names by appending a suffix: "#<number>"."""
+        base_name = mod.name or "unknown"
+        first:Mod|None = self.get(base_name)
+        if first is not None:
+            duplicates: set[Mod] = first._duplicates
+            duplicates.update({mod,first}) # add first to ensure it's counted
+            mod._duplicates = duplicates
+        self[f"{base_name}#{len(duplicates)}"] = mod
+        return
+        
     @property
     def load_order(self) -> list[str]:
         """Returns the current load order of mod names."""
