@@ -9,6 +9,7 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QModelIndex, QTimer
 from PyQt5.QtGui import QDropEvent, QCursor, QIcon
 
+from mod_analyzer.mod.descriptor import Mod
 from mod_analyzer.mod.mod_list import SourceEntry, ModList
 from mod_analyzer.mod.manager import ModManager
 from mod_analyzer.error import patterns
@@ -45,12 +46,12 @@ class QTextEditLogger(logging.Handler, QtCore.QObject):
         
 class ModTableWidgetItem(TableWidgetDragRows):
     """Custom QTableWidgetItem to hold a reference to the Mod object."""
-    DEFAULT_COL_WIDTHS = [400, 60, 80, 400, 60, 30]  # Default widths for Mod Name, Priority, Conflicts
+    DEFAULT_COL_WIDTHS = [400, 20, 60, 80, 400, 60, 30]  # Default widths for Mod Name, Priority, Conflicts
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
          # Create custom table widget with drag-drop support
-        self.setColumnCount(7)
-        self.setHorizontalHeaderLabels(["Mod Name", "Priority", "Conflicts", "Tags", "Version", "Outdated","Supported Version"])
+        self.setColumnCount(9)
+        self.setHorizontalHeaderLabels(["Mod Name", "","Priority", "Conflicts", "Tags", "Version", "Outdated","Supported Version", "Mod Directory"])
         self.setSelectionBehavior(qt.QAbstractItemView.SelectRows)
         # Allow editing only for Priority column
         self.setEditTriggers(qt.QAbstractItemView.NoEditTriggers)
@@ -1225,7 +1226,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         load_order: list[str] = self.mod_manager.mod_list.load_order
         self.mod_table.setRowCount(0)
         for row, mod_name in enumerate(load_order):
-            mod = self.mod_manager.mod_list[mod_name]
+            mod: Mod = self.mod_manager.mod_list[mod_name]
             self.mod_table.insertRow(row)
             
             # Mod Name with checkbox
@@ -1246,20 +1247,30 @@ class CK3ModManagerApp(qt.QMainWindow):
             
             # version
             version_item = qt.QTableWidgetItem(mod.version)
-            if mod.is_outdated(current_version="1.18.0.2"):
+            if mod.is_outdated(current_version=self.game_launcher.settings.version):
                 outdated_item = qt.QTableWidgetItem("⚠️")
                 outdated_item.setToolTip(f"Outdated")
             else:
                 outdated_item = qt.QTableWidgetItem("")
-            supported_version_item = qt.QTableWidgetItem(mod.supported_version)
+            supported_version_item = qt.QTableWidgetItem(mod.supported_version or "")
             
+            mod_dir_item = qt.QTableWidgetItem(str(mod.path))
+            is_steam_mod = mod.remote_file_id != ''
+            if is_steam_mod:
+                icon_path = str(Path(__file__).parent / "icons" / "icons8-steam-48.png")
+                mod_source_item = qt.QTableWidgetItem(QIcon(icon_path),'')
+            else:
+                icon_path = str(Path(__file__).parent / "icons" / "local-48.png")
+                mod_source_item = qt.QTableWidgetItem(QIcon(icon_path),'')
             self.mod_table.setItem(row, 0, name_item)
-            self.mod_table.setItem(row, 1, priority_item)
-            self.mod_table.setItem(row, 2, conflicts_item)
-            self.mod_table.setItem(row, 3, tags_item)
-            self.mod_table.setItem(row, 4, version_item)
-            self.mod_table.setItem(row, 5, outdated_item)
-            self.mod_table.setItem(row, 6, supported_version_item)
+            self.mod_table.setItem(row, 1, mod_source_item)
+            self.mod_table.setItem(row, 2, priority_item)
+            self.mod_table.setItem(row, 3, conflicts_item)
+            self.mod_table.setItem(row, 4, tags_item)
+            self.mod_table.setItem(row, 5, version_item)
+            self.mod_table.setItem(row, 6, outdated_item)
+            self.mod_table.setItem(row, 7, supported_version_item)
+            self.mod_table.setItem(row, 8, mod_dir_item)
 
         logger.info(f"Loaded {len(load_order)} mods")
     def _open_mod_folder(self, row, column):
