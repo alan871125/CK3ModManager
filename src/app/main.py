@@ -44,7 +44,6 @@ class QTextEditLogger(logging.Handler, QtCore.QObject):
     def emit(self, record):
         msg = self.format(record)
         self.appendPlainText.emit(msg)
-
         
 class ModTableWidgetItem(TableWidgetDragRows):
     """Custom QTableWidgetItem to hold a reference to the Mod object."""
@@ -68,7 +67,6 @@ class ModTableWidgetItem(TableWidgetDragRows):
         """Set column widths based on provided list."""
         for col, width in enumerate(widths):
             self.setColumnWidth(col, width)
-
 
 class CK3ModManagerApp(qt.QMainWindow):
     def __init__(self):
@@ -97,6 +95,11 @@ class CK3ModManagerApp(qt.QMainWindow):
         log_level = logging.DEBUG if self.settings.debug else logging.INFO
         logger.setLevel(log_level)
         self.initUI()
+        # Auto-load mods on startup
+        self.load_mods()
+        if self.settings.check_conflict_on_startup:
+            self.analyze_mod_list()
+        
     
     def closeEvent(self, event):
         """Handle window close event - clean up worker threads"""
@@ -421,26 +424,6 @@ class CK3ModManagerApp(qt.QMainWindow):
             type_item.setFlags(type_item.flags() | Qt.ItemIsUserCheckable)
             type_item.setCheckState(0, Qt.Checked)
         
-        # # Populate tree with categories and subcategories
-        # for category, category_data in error_patterns.items():
-        #     # Create parent item for category
-        #     category_item = qt.QTreeWidgetItem(self.filter_tree)
-        #     category_item.setText(0, category)
-        #     category_item.setFlags(category_item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
-        #     category_item.setCheckState(0, Qt.Checked)
-            
-        #     # Add subcategories (pattern types)
-        #     if "patterns" in category_data:
-        #         for pattern in category_data["patterns"]:
-        #             subcategory_item = qt.QTreeWidgetItem(category_item)
-        #             subcategory_item.setText(0, pattern.get("type", "Unknown"))
-        #             subcategory_item.setFlags(subcategory_item.flags() | Qt.ItemIsUserCheckable)
-        #             # Set duplicate_loc_keys to unchecked by default (usually too many)
-        #             if category == "duplicate_loc_keys":
-        #                 subcategory_item.setCheckState(0, Qt.Unchecked)
-        #             else:
-        #                 subcategory_item.setCheckState(0, Qt.Checked)
-        
         # Connect filter changes to update function
         self.filter_tree.itemChanged.connect(self.apply_error_filters)
         
@@ -705,7 +688,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         # Create and start worker thread
         self.file_tree_worker = FileTreeWorker(
             self.mod_manager,
-            file_range="enabled", #TODO: add option to settings
+            file_range="all", #TODO: add option to settings
             conflict_check_range="enabled", #TODO: add option to settings
             # conflict_check_range=None,
             max_workers=self.settings.max_workers or 4,
@@ -1127,7 +1110,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             self.open_file_at_line(
                 error_log_path, 
                 err.log_line or 0,
-                "vscode"                
+                "notepad++"                
             )
             
             # Log the line number if available
@@ -1363,9 +1346,6 @@ if __name__ == "__main__":
     app = qt.QApplication(sys.argv)
     mainWin = CK3ModManagerApp()
     mainWin.show()
-    
-    # Auto-load mods on startup
-    mainWin.load_mods()
     
     sys.exit(app.exec_())
 

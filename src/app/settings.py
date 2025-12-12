@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Settings:
-    auto_load: bool = True
     max_workers: int = os.cpu_count() or 4
     enabled_only: bool = False
     ck3_docs_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III")
@@ -25,16 +24,8 @@ class Settings:
     launcher_settings_path: str = r"C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III\launcher\launcher-settings.json"
     exe_args: str = "-gdpr-compliant"# default exe args from launcher-settings.json
     debug: bool = False
-    # def to_dict(self):
-    #     return {
-    #         'auto_load': self.auto_load,
-    #         'max_workers': self.max_workers,
-    #         'enabled_only': self.enabled_only,
-    #         'ck3_docs_path': self.ck3_docs_path,
-    #         'ck3_mods_path': self.ck3_mods_path,
-    #         'launcher_settings_path': self.launcher_settings_path,
-    #         'exe_args': self.exe_args,
-    #     }
+    check_conflict_on_startup: bool = False
+    
     def asdict(self) -> dict:
         return asdict(self)
     @staticmethod    
@@ -70,9 +61,9 @@ class SettingsDialog(QDialog):
         # General Settings Group
         general_group = QGroupBox("General Settings")
         general_layout = QFormLayout(general_group)
-        self.auto_load_checkbox = QCheckBox()
-        self.auto_load_checkbox.setChecked(self.settings.auto_load)
-        general_layout.addRow("Auto-load mods on startup: (Not Implemented)", self.auto_load_checkbox)
+        self.check_conflict_on_startup = QCheckBox()
+        self.check_conflict_on_startup.setChecked(self.settings.check_conflict_on_startup)
+        general_layout.addRow("Auto check mod conflicts on Startup", self.check_conflict_on_startup)
         
         self.max_workers_spinbox = QSpinBox()
         self.max_workers_spinbox.setMinimum(1)
@@ -156,20 +147,25 @@ class SettingsDialog(QDialog):
         current_path = target_edit.text().strip()
         if not current_path or not Path(current_path).exists():
             current_path = default_path
-
-        if mode == "dir":
+        if mode =='dir':
             path = QFileDialog.getExistingDirectory(
                 self, title, current_path,
                 QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
             )
-        elif mode == "file":
+        else:
+            match mode:
+                case "log":
+                    options = "Log Files (*.log);;All Files (*)"
+                case "json":
+                    options = "JSON Files (*.json);;All Files (*)"
+                case "file":
+                    options = "All Files (*)"
+                case _:
+                    options = "All Files (*)"
             path, _ = QFileDialog.getOpenFileName(
                 self, title, current_path,
-                "JSON Files (*.json);;All Files (*)"
+                options
             )
-        else:
-            raise ValueError("Invalid browse mode: must be 'dir' or 'file'")
-
         if path:
             target_edit.setText(path)
 
@@ -193,28 +189,28 @@ class SettingsDialog(QDialog):
             target_edit=self.error_log_path_edit,
             default_path=self.settings.error_log_path,
             title="Select error.log File",
-            mode="file"
+            mode="log"
         )
     def browse_launcher_path(self):
         self.browse_path(
             target_edit=self.launcher_path_edit,
             default_path=self.settings.launcher_settings_path,
             title="Select Launcher Settings File",
-            mode="file"
+            mode="json"
         )
 
             
     def get_settings(self):
         """Return current settings as a dictionary"""
         return {
-            'auto_load': self.auto_load_checkbox.isChecked(),
+            'auto_load': self.check_conflict_on_startup.isChecked(),
             'max_workers': self.max_workers_spinbox.value(),
             'ck3_docs_path': self.ck3_docs_path_edit.text(),
             'ck3_mods_path': self.mods_path_edit.text(),
         }
     def save_settings(self):
         """Update settings from the dialog inputs"""
-        self.settings.auto_load = self.auto_load_checkbox.isChecked()
+        self.settings.check_conflict_on_startup = self.check_conflict_on_startup.isChecked()
         self.settings.max_workers = self.max_workers_spinbox.value()
         self.settings.enabled_only = self.enabled_mods_only.isChecked()
         self.settings.ck3_docs_path = self.ck3_docs_path_edit.text()
