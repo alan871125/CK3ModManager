@@ -11,7 +11,7 @@ logger = logging.getLogger(pkg)
 
 from utils.cocurrent import run_multithread, run_multiprocess
 from ..encoding import detect_encoding
-from . import paradox_parser 
+from . import paradox_parser, paradox_loc_parser
 from . import Mod, DefinitionNode, DefinitionDirectoryNode, DefinitionFileNode, ModList, SourceList, SourceEntry
 from .mod_loader import get_mod_info, get_enabled_mod_descriptors, get_all_mod_descriptors, get_all_mod_descriptor_paths, get_playset_mod_descriptors, get_enabled_mod_dirs, load_mod_descriptor
 from .conflict import non_conflict_keywords
@@ -40,6 +40,7 @@ class ModManager:
     root_dir: Path
     mod_list: ModList[str]
     _max_def_depth: int = 0
+    language: str = "english" # default language for localization parsing
     def __init__(self):
         self.mod_list = ModList()
         self.reset()
@@ -72,15 +73,19 @@ class ModManager:
         # For Developers: Keep this function at staticmethod level (or module level) to be picklable by ProcessPoolExecutor!!!
         try:
             encoding = detect_encoding(file_entry.file)
-            with file_entry.file.open('r', encoding=encoding) as f:
-                source = f.read()
-            tree = paradox_parser.parser.parse(source.encode(encoding or 'utf-8'))
-            definitions: DefinitionNode = paradox_parser.extract_node_definitions(
-                tree.root_node, 
-                # use "<def>" as a virtual space under the rel dir of the file, for tracking from root
-                DefinitionNode(file_entry.file.name, str(file_entry.rel_path.parent), source=file_entry),
-                max_depth=ModManager._max_def_depth
-            )
+            if file_entry.file.suffix.lower() == ".txt":
+                source=file_entry.file.read_bytes()
+                tree = paradox_parser.parser.parse(source)
+                definitions: DefinitionNode = paradox_parser.extract_node_definitions(
+                    tree.root_node, 
+                    DefinitionNode(file_entry.file.name, str(file_entry.rel_path.parent), source=file_entry),
+                    max_depth=ModManager._max_def_depth
+                )
+            elif file_entry.file.suffix.lower() == ".yml":
+                definitions: DefinitionNode = paradox_loc_parser.extract_definitions(
+                    file_entry.file.read_text(encoding=encoding), 
+                    DefinitionNode(file_entry.file.name, str(file_entry.rel_path.parent), source=file_entry),
+                )
         except Exception as e:
             logger.exception(f"Error reading %s: %s", file_entry.file, str(e))
             return (file_entry, None, str(e))
@@ -234,7 +239,7 @@ class ModManager:
     def _get_mod_file_entries(self, mod_info:Mod) -> dict[str, list[SourceEntry]]:
         """Gets the file entries for a given mod."""
         mod_dir:Path = mod_info.path
-        file_entries: dict[str,list[SourceEntry]] = {"txt": [], "other": []}
+        file_entries: dict[str,list[SourceEntry]] = {"txt": [], "yml":[], "other": []}
         for dirpath, dirnames, files in os.walk(mod_dir):
             dirpath = Path(dirpath)
             relpath = dirpath.relative_to(mod_dir)            
@@ -251,7 +256,11 @@ class ModManager:
                 file_entry.link_mod(mod_info)                 
                 if file.lower().endswith(".txt"):
                     file_entries["txt"].append(file_entry)
-                if file.lower().endswith((".yml", ".gui", ".csv", ".dds")):
+                elif (file.lower().endswith(".yml") and 
+                      file.endswith(f'l_{self.language}.yml') # only parse localization for the specified language
+                ):
+                    file_entries["yml"].append(file_entry)
+                elif file.lower().endswith((".yml",".gui", ".csv", ".dds")):
                 # These files are not parsed for definitions, but added to file tree
                 # TODO: gui files can be parsed for definitions later
                     file_entries["other"].append(file_entry)
@@ -272,10 +281,18 @@ class ModManager:
                     
     def add_definition(self, file_entry:SourceEntry, definitions:DefinitionNode) -> bool:
         _ = self.define_table.setdefault_by_dir(file_entry.rel_path, definitions)
-        def_node: DefinitionNode = self.define_table.setdefault_by_dir(
-            file_entry.rel_path.parent/'<def>', 
-            DefinitionFileNode('<def>', file_entry.rel_path.parent)
-        )
+        if file_entry.file.suffix.lower() =='.txt':            
+            def_node: DefinitionNode = self.define_table.setdefault_by_dir(
+                # use "<def>" as a virtual space under the rel dir of the file, for tracking from root
+                file_entry.rel_path.parent/'<def>', 
+                DefinitionFileNode('<def>', file_entry.rel_path.parent)
+            )
+        elif file_entry.file.suffix.lower() =='.yml':
+            def_node: DefinitionNode = self.define_table.setdefault_by_dir(
+                # use "<loc>" as a virtual space under the rel dir of the file, for tracking from root
+                'localization/<loc>', 
+                DefinitionFileNode('<loc>', file_entry.rel_path.parent)
+            )
         has_conflict = False
         if def_node == definitions: # no matching path found, safe to add without conflict
             return False
@@ -326,17 +343,19 @@ class ModManager:
         Args:
             mod_list (ModList): List of mods to include in the file tree.
         """
-        file_entries: dict[str, list[SourceEntry]] = {"txt": [], "other": []}
+        file_entries: dict[str, list[SourceEntry]] = {"txt": [], "yml":[],"other": []}
         t0=time.perf_counter()    
         if process_max_workers is not None and process_max_workers > 1:
             mod_entries = run_multithread(self._get_mod_file_entries, mod_list.values(), max_workers=process_max_workers)
             for mod_entry in mod_entries:
                 file_entries["txt"].extend(mod_entry["txt"])
+                file_entries["yml"].extend(mod_entry["yml"])
                 file_entries["other"].extend(mod_entry["other"])
         else:
             for mod_info in mod_list.values():            
                 mod_file_entries = self._get_mod_file_entries(mod_info)
                 file_entries["txt"].extend(mod_file_entries["txt"])
+                file_entries["yml"].extend(mod_file_entries["yml"])
                 file_entries["other"].extend(mod_file_entries["other"])
         
         logger.debug("File entries collected in %.2f seconds", (t1:=time.perf_counter()) - t0)
@@ -347,8 +366,10 @@ class ModManager:
         if process_max_workers is not None and process_max_workers > 1:
             # This runs multithreaded/multiprocessed, Do NOT put it in the for loop
             self._extract_definitions_multiprocess(file_entries["txt"], max_workers=process_max_workers)
+            self._extract_definitions_multiprocess(file_entries["yml"], max_workers=process_max_workers)
         else:
             self._extract_definitions(file_entries["txt"])
+            self._extract_definitions(file_entries["yml"])
         logger.debug("Definitions extracted in %.2f seconds", time.perf_counter()-t2)
         
     def get_rel_path(self, abs_path: str|Path) -> Optional[Path]:

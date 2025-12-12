@@ -9,6 +9,8 @@ from PyQt5.QtWidgets import (
     QCheckBox, QSpinBox, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox
 )
 
+from app import game
+
 
 from .directory import CK3_MODS_DIR
 
@@ -25,6 +27,7 @@ class Settings:
     exe_args: str = "-gdpr-compliant"# default exe args from launcher-settings.json
     debug: bool = False
     check_conflict_on_startup: bool = False
+    game_language: str = "english"
     
     def asdict(self) -> dict:
         return asdict(self)

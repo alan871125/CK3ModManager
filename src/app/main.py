@@ -77,6 +77,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.settings: Settings = Settings.load("settings.json") or Settings()
         self.game_launcher = GameLauncher(self.settings.launcher_settings_path)
         self.mod_manager = ModManager()
+        self.mod_manager.language = self.settings.game_language
         self.analyzer:ErrorAnalyzer = ErrorAnalyzer(self.mod_manager)
         self.error_sources: dict[int, list[SourceEntry]]
         self.error_worker: Optional[ErrorAnalysisWorker] = None
