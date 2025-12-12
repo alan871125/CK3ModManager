@@ -44,7 +44,7 @@ class Mod:
     file: Optional[Path] = field(default=None, repr=False, compare=False)  # Path to descriptor.mod file
     # If this is True, enabled mods sort before disabled mods
     _enabled_first: bool = field(default = False, init=True, repr=False, compare=False)
-    _duplicates: set["Mod"] = field(default_factory=set, init=False, repr=False, compare=False)
+    _dup_id:int = field(default=0, init=False, repr=False, compare=False)
     def __post_init__(self):
         # Set initial sort index from enabled
         object.__setattr__(self, "_sort_index", 0 if bool(self.enabled and self._enabled_first) else 1)
@@ -57,7 +57,12 @@ class Mod:
         if name in {"path", "picture", "replace_path", "file"} and value is not None:
             value = Path(value)  # ensure Path object
         super().__setattr__(name, value)
-    
+    @property
+    def dup_name(self) -> str:
+        """Get the mod name with duplicate suffix if applicable."""
+        if self._dup_id > 0:
+            return f"{self.name}#{self._dup_id}"
+        return self.name
     def as_dict(self):
         """Convert to dictionary representation."""
         return asdict(self)
@@ -130,5 +135,19 @@ class Mod:
             elif num0 > num1:
                 return False
         return False  # Versions are equal up to the length of the shorter one
+    
+    # def __getstate__(self):
+    #     state = self.__dict__.copy()
+    #     # Remove _duplicates to avoid recursion/hashing issues during unpickling
+    #     if "_duplicates" in state:
+    #         del state["_duplicates"]
+    #     return state
+
+    # def __setstate__(self, state):
+    #     self.__dict__.update(state)
+    #     # Restore _duplicates as empty set if missing
+    #     if "_duplicates" not in self.__dict__:
+    #         object.__setattr__(self, "_duplicates", set())
+
     def __hash__(self):
         return hash((self.name, self.path))

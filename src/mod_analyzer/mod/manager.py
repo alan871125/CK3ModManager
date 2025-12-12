@@ -55,7 +55,7 @@ class ModManager:
     @property
     def load_order(self) -> list[str]:
         """Returns the current load order of mods as a list of mod IDs."""
-        return [mod.name for mod in self.mod_list.enabled]
+        return [mod.dup_name for mod in self.mod_list.enabled]
     def set_load_order(self, load_order: list[str]) -> None:
         """Sets the load order of mods based on the provided list of mod IDs."""
         for i, mod_id in enumerate(load_order):
@@ -286,8 +286,8 @@ class ModManager:
                 continue            
             # Ensure the new value has the source set correctly
             value.set_source(file_entry)
-            
             def_node[key] = value # always overwrite for now # TODO: handle defs that won't confilct with same names.
+            self.definitions.setdefault(key, []).append(value)
             if _key_node:
                 def_node[key].sources.update(_key_node.sources) # merge sources 
                 has_conflict = def_node[key].has_conflict() or has_conflict

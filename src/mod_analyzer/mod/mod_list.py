@@ -9,7 +9,7 @@ from .descriptor import Mod
 pkg = (__package__ or __name__).split('.')[0]
 logger = logging.getLogger(pkg)
 
-class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
+class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):    
     """Holds a list of mods and their information.
     
     Example:
@@ -25,7 +25,7 @@ class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
     """
     def __init__(self, mod_list: Optional[Sequence[Mod]|dict[Any, Mod]] = None, load_order: Optional[list[str]] = None):
         super().__init__()
-        
+        self.duplicates:dict[str, int] = {}
         no_order_provided = load_order is None
         if mod_list is None:
             return
@@ -57,13 +57,13 @@ class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
     def add_duplicate(self, mod: Mod):
         """Renames duplicate mod names by appending a suffix: "#<number>"."""
         base_name = mod.name or "unknown"
-        first:Mod|None = self.get(base_name)
-        if first is not None:
-            duplicates: set[Mod] = first._duplicates
-            duplicates.update({mod,first}) # add first to ensure it's counted
-            mod._duplicates = duplicates
-        self[f"{base_name}#{len(duplicates)}"] = mod
-        return
+        if self.get(base_name) is None:
+            self[base_name] = mod
+            return
+        duplicates = self.duplicates.get(base_name, 0)+1
+        self.duplicates[base_name] = duplicates
+        mod._dup_id = duplicates
+        self[mod.dup_name] = mod
         
     @property
     def load_order(self) -> list[str]:
@@ -73,9 +73,9 @@ class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
         """Sets a mod in the list by name."""
         assert isinstance(value, Mod)
         super().__setitem__(key, value)
-    def update(self, mod_list: dict[str, Mod]):
+    def update(self, mod_list: dict[str, Mod], **kwargs) -> None:
         """Updates the mod list with new mods."""
-        super().update(mod_list)
+        super().update(mod_list, **kwargs)
         self.sort()
                 
     def sort(self, *, key=None, reverse=False):
@@ -121,16 +121,24 @@ class SourceEntry:
     # order by priority ascending if needed; or keep separate sort key
     # primary sort fields (dataclass compares fields in definition order)
     file: Path = field(repr=True, compare=False)
-    priority: int = 0
-    # sort_index is computed from `enabled`: enabled -> 0, disabled -> 1
-    _sort_index: int = field(init=False, repr=False, compare=True)
-    # don't include `enabled` directly in comparisons (we use sort_index)
-    enabled: Optional[bool] = field(default=True, compare=False)
-    load_order: int = -1
-    mod_id: Optional[str] = ""
-    mod: Optional[Mod] = field(init=False, repr=False, compare=False)
-    parent: Optional["DefinitionNode"] = field(init=False, repr=False, compare=False)
-
+    mod: Optional[Mod] = field(init=False, repr=False, compare=True)
+    name: Optional[str] = ""
+    # # sort_index is computed from `enabled`: enabled -> 0, disabled -> 1
+    # _sort_index: int = field(init=False, repr=False, compare=True)
+    # # don't include `enabled` directly in comparisons (we use sort_index)
+    # _enabled: Optional[bool] = field(default=True, compare=False)
+    # _load_order: int = -1
+    @property
+    def enabled(self) -> Optional[bool]:
+        # check hasattr for thread safety
+        if hasattr(self, 'mod') and self.mod is not None:
+            return self.mod.enabled
+    @property
+    def load_order(self) -> int:
+        # check hasattr for thread safety
+        if hasattr(self, 'mod') and self.mod is not None:
+            return self.mod.load_order
+        return -1
     def __post_init__(self):
         # enabled True should sort before disabled, so enabled -> 0, disabled -> 1
         self._sort_index = 0 if bool(self.enabled) else 1
@@ -139,9 +147,7 @@ class SourceEntry:
     def link_mod(self, mod: Mod):
         # update state from a Mod instance and refresh sort_index
         self.mod = mod
-        self.load_order = mod.load_order or -1
-        self.enabled = mod.enabled
-        self.mod_id = mod.name
+        self.name = mod.name
         self._sort_index = 0 if bool(self.enabled) else 1
     @property
     def rel_path(self) -> Path:
@@ -151,27 +157,37 @@ class SourceEntry:
     def as_dict(self) -> dict[str, Any]:
         return {
             "file": str(self.file) if self.file else None,
-            "priority": self.priority,
             "enabled": self.enabled,
             "load_order": self.load_order,
-            "mod_id": self.mod_id,
+            "mod_id": self.name,
         }
         
-class SourceList(IndexedOrderedDict):
+class SourceList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
     def sort(self, *, key=None, reverse=False):
         if key is None:
             key = lambda k: self[k]
         super().sort(key=key, reverse=reverse)
-    def update(self, __m: object = None, **kwargs) -> None:
-        if isinstance(__m, SourceEntry):
-            source = __m
-            assert isinstance(source, SourceEntry)
-            self[source.mod_id] = source
-            self.sort()
-            if kwargs:
-                super().update(**kwargs)
-        else:
-            super().update(__m or {}, **kwargs) #type: ignore
+    def __setitem__(self, key: str, value: SourceEntry):
+        assert isinstance(value, SourceEntry)
+        super().__setitem__(key, value)
+    def update(self, __m: dict[str, SourceEntry], **kwargs) -> None:
+        super().update(__m, **kwargs)
+        self.sort()
+    def get_mods(self) -> ModList:
+        """Returns a list of linked Mod instances from the sources."""
+        mods = ModList()
+        source:SourceEntry
+        for source in self.values():
+            if source.mod is not None:
+                mods.add_duplicate(source.mod)
+        return mods
+    def get_enabled(self) -> "SourceList":
+        """Returns a SourceList of only enabled sources."""
+        enabled_sources = SourceList()
+        for key, source in self.items():
+            if source.enabled:
+                enabled_sources[key] = source
+        return enabled_sources
 
 @dataclass(init=False)
 class DefinitionNode(dict):
@@ -207,7 +223,9 @@ class DefinitionNode(dict):
         
     def set_source(self, source: SourceEntry):
         assert isinstance(source, SourceEntry)
-        self.sources[source.mod_id] = source
+        name = source.name or source.mod.name if source.mod else None
+        assert name is not None, "SourceEntry must have a name or linked Mod with a name"
+        self.sources[name] = source
         self.sources.sort()
             
     def has_conflict(self) -> bool:

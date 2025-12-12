@@ -230,7 +230,7 @@ class ErrorAnalyzer():
             mod:Optional[Mod]= self.mod_manager.mod_list.get(mod_name)
             file_path = Path("%CK3_MODS_DIR%")/Path(desc_file).name
             # file_path = CK3_DOC_DIR/"mod"/Path(err.file).name
-            source: SourceEntry = SourceEntry(file=file_path, mod_id=mod_name)
+            source: SourceEntry = SourceEntry(file=file_path, name=mod_name)
             source.link_mod(mod) if mod else None                    
             return [source]
         else:
@@ -242,9 +242,16 @@ class ErrorAnalyzer():
         elif len(candidates) > 1:
             if err.type =='SCRIPT_ERROR':
                 return list(candidates.values())
-            for mod_id, source in candidates.items():
-                logger.debug("Checking candidate mod: %s", mod_id)
+            # returning only the enabled mod for now
+            enabled_candidates = candidates.get_enabled()
+            if len(enabled_candidates) == 1:
+                return list(enabled_candidates.values())
+            else:
+                # for mod_id, source in candidates.items():
+                #     logger.debug("Checking candidate mod: %s", mod_id)
                 logger.error("Conflict checking not implemented yet, report if you see this ERROR: Could not uniquely identify source mod for error: %s", err)
+            return []
+        # candidate not found    
         if "LOC" in err.type:
             logger.warning("Error sourcing for this error is not implemented yet: %s", err)
         elif err.source and err.source.file:
