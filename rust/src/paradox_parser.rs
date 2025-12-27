@@ -262,7 +262,6 @@ impl DefinitionExtractor {
                         };
                         if self.check_loc_conflicts == false {
                             loc_node.update(node);
-                            continue;
                         }
                         // let conflicts = loc_node.update_with_conflict_check(&node);
                         // if !conflicts.is_empty() {
