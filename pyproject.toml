@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "mod_analyzer"
+version = "0.1.0"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+[tool.maturin]
+python-source = "src"
+module-name = "mod_analyzer.mod.paradox.__init__"
+manifest-path = "rust/Cargo.toml"

@@ -26,7 +26,7 @@ from .datastructure import DualAccessDict
 
 regex_multiline = DualAccessDict( # regex patterns for multiline matching
     # jomini_script_system.cpp:303
-    SCRIPT_ERROR = r"file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<object>[^\)]+)",
+    SCRIPT_ERROR = r"file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<object>[^\)]+)",
     # pdx_persistent_reader.cpp:216
     FAILED_TO_READ_KEY_REFERENCE = r"Failed to read key reference: (?P<key>\w+):\s*(?P=key), near line: (?P<line>\d+)",
     # ^.*\[pdx_persistent_reader.cpp:216\]: Error: "(Failed to read key reference: ([^"]+\n?)+)" in file: "([^\s]+)" near line: (\d+)\n
@@ -45,9 +45,9 @@ regex = DualAccessDict(
     #=========
     #===character_interaction_filters.cpp
     # character_interaction_filters.cpp:66
-    CHANCE_OUT_OF_BOUNDS = r"chance should be .* at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
+    CHANCE_OUT_OF_BOUNDS = r"chance should be .* at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
     # character_interaction_filters.cpp:71
-    AT_LEAST_ONE_AI_RECIPIENT = r"needs at least one ai_recipient scripted at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
+    AT_LEAST_ONE_AI_RECIPIENT = r"needs at least one ai_recipient scripted at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
     #===jomini_effect.cpp
     # jomini_effect.cpp:1136
     OBJ_SET_NOT_USED = r"(?P<type>[\w]+( target)?) '(?P<key>[^\']+)' is set but is never used.",
@@ -65,28 +65,28 @@ regex = DualAccessDict(
     # jomini_custom_text.h:94
     OBJECT_TYPE_NOT_VALID = r"Object of type '(?P<type>[^\']+)' is not valid for '(?P<obj>[^\']+)'",
     # jomini_trigger.cpp:243
-    # TRIGGER_POSTVALIDATE_FALSE = r"PostValidate of trigger '(?P<trigger>[^\']+)' returned false at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^:]+):(?P<action>[^\)]+)\)",
-    POSTVALIDATE_RETURNED_FALSE = r"PostValidate of (?P<type>\w+) '(?P<key>[^\']+)' returned false at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\[^:]+)(\[args#\d+\])?(:(?P<action>[^\)]+))?\)",
+    # TRIGGER_POSTVALIDATE_FALSE = r"PostValidate of trigger '(?P<trigger>[^\']+)' returned false at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^:]+):(?P<action>[^\)]+)\)",
+    POSTVALIDATE_RETURNED_FALSE = r"PostValidate of (?P<type>\w+) '(?P<key>[^\']+)' returned false at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\[^:]+)(\[args#\d+\])?(:(?P<action>[^\)]+))?\)",
     # jomini_trigger.cpp:749
-    INCONSISTENT_SCOPES = r"Inconsistent (?P<type>.*) scopes \((?P<scope1>[^\s]+) vs\. (?P<scope2>[^\s]+)\) infile: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\[^:]+)(\[args#\d+\])?(:(?P<action>[^\)]+))?\)",
+    INCONSISTENT_SCOPES = r"Inconsistent (?P<type>.*) scopes \((?P<scope1>[^\s]+) vs\. (?P<scope2>[^\s]+)\) infile: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\[^:]+)(\[args#\d+\])?(:(?P<action>[^\)]+))?\)",
     # dlc_descriptor.cpp:70
     INVALID_SUPPORTED_VERSION = r"Invalid supported_version in file:\s+(?P<file>mod/[^\s]+)\s+line:\s*(?P<line>\d+)",
     # virtualfilesystem_physfs.cpp:1594
     PATH_OVER_250_CHARACTERS = r"(?P<file>.+) path is over \d+ characters long and will likely cause a crash on open\. Consider changing install path to something shorter",
     # localization_reader.cpp:111
-    ILLEGAL_LOC_BREAK_CHARACTER = r"Illegal localization break character \(`(?P<char>.)`\) at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\s]+)",
+    ILLEGAL_LOC_BREAK_CHARACTER = r"Illegal localization break character \(`(?P<char>.)`\) at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\n]+)",
     # localization_reader.cpp:402
-    MISSING_UTF8_BOM = r"Missing UTF8 BOM in '(?P<file>[^\s]+)'",
+    MISSING_UTF8_BOM = r"Missing UTF8 BOM in '(?P<file>[^\n]+)'",
     # localize.cpp:1854
     ENCODING_ERROR = r"'(?P<file>[^'\s]+)' should be.*in utf\-?8\-?bom encoding",
     # localization_reader.cpp:445
-    INVALID_CHARACTER_IN_KEY_NAME = r"(?P<message>(Invalid character\s+'(?P<char>[^']+)))'\s+in key name\s+'(?P<key>[^']+)'.+in\s+(?P<file>[^\s]+)",
+    INVALID_CHARACTER_IN_KEY_NAME = r"(?P<message>(Invalid character\s+'(?P<char>[^']+)))'\s+in key name\s+'(?P<key>[^']+)'.+in\s+(?P<file>[^\n]+)",
     # localization_reader.cpp:451
-    MISSING_COLON_SEPARATOR = r"Missing colon.*separator at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\s]+)",
+    MISSING_COLON_SEPARATOR = r"Missing colon.*separator at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\n]+)",
     # localization_reader.cpp:535
-    MISSING_QUOTED_STRING_VALUE = r"Missing quoted string value for key '(?P<key>[^']+)' at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\s]+)",
+    MISSING_QUOTED_STRING_VALUE = r"Missing quoted string value for key '(?P<key>[^']+)' at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\n]+)",
     # localization_reader.cpp:581 & 575
-    UNEXPECTED_LOC_TOKEN = r"Unexpected (localization )?token '(?P<key>[^']*)' at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\s]+)",
+    UNEXPECTED_LOC_TOKEN = r"Unexpected (localization )?token '(?P<key>[^']*)' at line (?P<line>\d+) and column (?P<column>\d+) in (?P<file>[^\n]+)",
     
     # culture_template_data.cpp:304
     # culture_name_equivalency.cpp:101
@@ -97,38 +97,38 @@ regex = DualAccessDict(
     
     # jomini_custom_text.cpp:179
     # artifact_type.cpp:25
-    MISSING_LOC_KEY = r"Missing loc key '(?P<key>[^']+)' for custom localization '(?P<obj>[^']+)' \(or variant\), at 'file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj2>[^']+)\)'",
+    MISSING_LOC_KEY = r"Missing loc key '(?P<key>[^']+)' for custom localization '(?P<obj>[^']+)' \(or variant\), at 'file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj2>[^']+)\)'",
     MISSING_LOC_KEY_KEY_ONLY = r"Missing loc key: '?(?P<key>[^\']+)'?",
     # jomini_dynamicdescription.cpp:57
-    UNRECOGNIZED_LOC_KEY_NEAR_FILE = r"Unrecognized loc key (?P<key>[^\s]+)\. Near file: (?P<file>[^\s]+) line: (?P<line>\d+)(\s\((?P<obj>[^\)]+)\))?",
+    UNRECOGNIZED_LOC_KEY_NEAR_FILE = r"Unrecognized loc key (?P<key>[^\s]+)\. Near file: (?P<file>[^\n]+) line: (?P<line>\d+)(\s\((?P<obj>[^\)]+)\))?",
     # jomini_dynamicdescription.cpp:66
-    UNRECOGNIZED_LOC_KEY = r"Unrecognized loc key (?P<key>[^\s]+)\. file: (?P<file>[^\s]+) line: (?P<line>\d+)(\s\((?P<obj>[^\)]+)\))?",
+    UNRECOGNIZED_LOC_KEY = r"Unrecognized loc key (?P<key>[^\s]+)\. file: (?P<file>[^\n]+) line: (?P<line>\d+)(\s\((?P<obj>[^\)]+)\))?",
     UNRECOGNIZED_LOC_KEY_NO_FILE = r"Unrecognized loc key (?P<key>[^\s]+)\. (?P<obj>[^\s]+)",
     # pdx_data_localize.cpp:151&136
     LOC_STR_DATA_ERROR = r"Data error in loc string '(?P<key>[^\s]+)'",
     # pdx_locstring.cpp:93
-    MISSING_LOCALIZATION = r"Key is missing localization: (?P<key>[^\s]+).",
+    MISSING_LOCALIZATION = r"Key is missing localization: (?P<key>[^\s]+)",
     # pdx_localize.cpp:267
     LOC_KEY_HASH_COLLISION = r"Localization key hash collision. Key '(?P<key>[^']+)' and '(?P<key2>[^']+)' have the (?P<message>.+)",
     # pdx_localize.cpp:279
-    DUPLICATE_LOC_KEY = r"Duplicate localization key\. Key '(?P<key>[^']+)' is defined in both '(?P<file1>[^\s]+)' and '(?P<file2>[^\s]+)'",    
+    DUPLICATE_LOC_KEY = r"Duplicate localization key\. Key '(?P<key>[^']+)' is defined in both '(?P<file>[^\n]+)' and '(?P<file2>[^\n]+)'",    
     # pdx_localize.cpp:933 (only key)
     TRYING_TO_IMPORT_LOC_KEY_OUTSIDE_OF_LANGUAGE = r"Trying to import a localization key outside of a language: (?P<key>[^\s]+)",
     # pdx_gui_factory.cpp:317
-    GUI_FAILED_READING_PROPERTY = r"failed reading property, at line (?P<line>\d+) in file (?P<file>[^\s]+)",
+    GUI_FAILED_READING_PROPERTY = r"failed reading property, at line (?P<line>\d+) in file (?P<file>[^\n]+)",
     # pdx_gui_factory.cpp:937
-    GUI_FAILED_CONVERTING_PROPERTY = r"(?P<file>[^\s]+):(?P<line>\d+) - Failed converting property '(?P<property>[^']+)'\((?P<some_num>\d+)\)",
+    GUI_FAILED_CONVERTING_PROPERTY = r"(?P<file>[^\n]+):(?P<line>\d+) - Failed converting property '(?P<property>[^']+)'\((?P<some_num>\d+)\)",
     # pdx_gui_factory.cpp:663
-    GUI_DUPLICATE_CHILD_WIDGET = r"(?P<file>[^\s]+):(?P<line>\d+) - Child '(?P<value>[^\']+)' already exists added at (?P<file2>[^\s]+):(?P<line2>\d+)\. Duplicate children with the same name override previous widgets\.",
+    GUI_DUPLICATE_CHILD_WIDGET = r"(?P<file>[^\n]+):(?P<line>\d+) - Child '(?P<value>[^\']+)' already exists added at (?P<file2>[^\s]+):(?P<line2>\d+)\. Duplicate children with the same name override previous widgets\.",
     # pdx_gui_localize.cpp:358
-    GUI_FAILED_PARSING_LOCALIZED_TEXT = r"(?P<file>[^\s]+):(?P<line>\d+) - Failed parsing localized text: (?P<key>[^\s]+)",
+    GUI_FAILED_PARSING_LOCALIZED_TEXT = r"(?P<file>[^\n]+):(?P<line>\d+) - Failed parsing localized text: (?P<key>[^\s]+)",
     # pdx_gui_widget.cpp:2154
-    GUI_PROPERTY_NOT_HANDLED = r"(?P<file>[^\s]+):(?P<line>\d+) - Property '(?P<key>[^\']+)'\((?P<some_num>[^\)]+)\) not handled",
+    GUI_PROPERTY_NOT_HANDLED = r"(?P<file>[^\n]+):(?P<line>\d+) - Property '(?P<key>[^\']+)'\((?P<some_num>[^\)]+)\) not handled",
     # pdx_gui_factory.cpp:1540
-    GUI_ERROR_SETTING_PROPERTIES = r"(?P<file>[^\s]+):(?P<line>\d+) - Error setting properties for '(?P<value>[^\']*)' \((?P<type>[^\)]+)\)", 
+    GUI_ERROR_SETTING_PROPERTIES = r"(?P<file>[^\n]+):(?P<line>\d+) - Error setting properties for '(?P<value>[^\']*)' \((?P<type>[^\)]+)\)", 
     # pdx_gui_layout.cpp:137|pdx_gui_container.cpp:53|pdx_gui_container.cpp:142
-    GUI_ERRORS = r"(?P<file>[^\s]+):(?P<line>\d+) - (?P<message>.+)",
-    # # GUI_WIDGET_HAVING_POSITION = r"(?P<file>[^\s]+):(?P<line>\d+) - Widget cannot have a position in a layout",
+    GUI_ERRORS = r"(?P<file>[^\n]+):(?P<line>\d+) - (?P<message>.+)",
+    # # GUI_WIDGET_HAVING_POSITION = r"(?P<file>[^\n]+):(?P<line>\d+) - Widget cannot have a position in a layout",
     # # pdx_persistent_reader.cpp:216 # maybe already covered in other patterns (seems to be error passing)
     # # Error: "Failed to read key reference: ([^"]+)" in file: "([^\s]+)" near line: (\d+)
     # FAILED_TO_READ_KEY_REFERENCE = r'Error: "(?P<message>(Failed to read key reference: [^\"]\n?)+)" in file: "(?P<file>[^\"]*)" near line: (?P<line>\d+)',
@@ -142,30 +142,30 @@ regex = DualAccessDict(
     INALID_NEGATIVE_VALUE = r'Error: "invalid negative value for \'(?P<key>[^\']+)\': (.*), near line: (?P<line>\d+)( \(expanded from file: .+ line: \d+\))?" in file: "(?P<file>[^"]+)" near line: \d+',
     # INALID_NEGATIVE_VALUE = r'Error: "invalid negative value for \'(?P<element>[^\']+)\': (?P=element), near line: (?P<line>\d+)( \(expanded from file: .+ line: \d+\))?" in file: "(?P<file>[^"]+)" near line: \d+',
     # pdx_gui_localize.cpp:207
-    GUI_UNLOCALIZED_TEXT = r"Unlocalized text '(?P<text>[^']+)' at (?P<file>[^\s]+):(?P<line>\d+), either localize it or use the raw_text property instead of text",
+    GUI_UNLOCALIZED_TEXT = r"Unlocalized text '(?P<text>[^']+)' at (?P<file>[^\n]+):(?P<line>\d+), either localize it or use the raw_text property instead of text",
     
     # portraitcontext.cpp:136
-    UNKOWN_GENE_TEMPLATE = r"Unknown (?P<key>\S+) gene template (?P<value>\S+) at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
+    UNKOWN_GENE_TEMPLATE = r"Unknown (?P<key>\S+) gene template (?P<value>\S+) at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
     # portraitcontext.cpp:184
-    NO_GENE_WITH_KEY_IN_GROUP = r"No gene with key: (?P<key>\S+) in group human at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
+    NO_GENE_WITH_KEY_IN_GROUP = r"No gene with key: (?P<key>\S+) in group human at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
     # NO_GENE_WITH_KEY_IN_GROUP = No gene with key: (\S+) in group human at file: ([^\s]+) line: \d+ \(\S+\)
     # portraitcontext.cpp:239
-    GENE_READ_TWICE = r'Trying to read gene (?P<key>\S+) a second time at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>\S+)\)',
+    GENE_READ_TWICE = r'Trying to read gene (?P<key>\S+) a second time at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>\S+)\)',
     # portraitcontext.cpp:326
-    PERSISTENT_PORTRAIT_INFO_MISSING_GENE = r"Persistent portrait info missing gene (?P<key>\S+)! at 'file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>\S+)\)'",
+    PERSISTENT_PORTRAIT_INFO_MISSING_GENE = r"Persistent portrait info missing gene (?P<key>\S+)! at 'file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>\S+)\)'",
     
     
     # ethnicity: ethnicity.cpp:304
-    GENE_CATEGORY_DNA_INFLUENCED = r"gene category '(?P<key>\S+)' cannot be influenced by DNA, at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
+    GENE_CATEGORY_DNA_INFLUENCED = r"gene category '(?P<key>\S+)' cannot be influenced by DNA, at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
     # ethnicity: ethnicity.cpp:174
-    INVALID_COLOR_BOUNDS = r"invalid color bounds\. Expected format \{ xmin, ymin, xmax, ymax \}\. (?P<message>.+?)\. file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
+    INVALID_COLOR_BOUNDS = r"invalid color bounds\. Expected format \{ xmin, ymin, xmax, ymax \}\. (?P<message>.+?)\. file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>\S+)\)",
     # game_concepts.cpp:208 #TODO: verify, not sure what each group represents
     CONCEPT_COLLISION = r"Trying to add a Game Concept or Alias ('(?P<key>[^']+)') from concept ('(?P<value>[^']+)') that collides.*('(?P<key2>[^']+)')",
     # title_links.cpp:214
-    INVALID_LANDED_TITLE = r"Failed to fetch a valid landed title '(?P<value>[^']+)' at location 'file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)'",
-    CHARACTER_INTERACTION_FILTER_ERROR = r"(?P<message>.*) at file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
+    INVALID_LANDED_TITLE = r"Failed to fetch a valid landed title '(?P<value>[^']+)' at location 'file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)'",
+    CHARACTER_INTERACTION_FILTER_ERROR = r"(?P<message>.*) at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
     # jomini_script_system.cpp:303
-    SCRIPT_ERROR = r'(file: (?P<file>[^\s]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\))',
+    SCRIPT_ERROR = r'(file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\))',
     
 )
 source_related_errors = {

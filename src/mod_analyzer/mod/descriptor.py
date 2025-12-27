@@ -135,19 +135,6 @@ class Mod:
             elif num0 > num1:
                 return False
         return False  # Versions are equal up to the length of the shorter one
-    
-    # def __getstate__(self):
-    #     state = self.__dict__.copy()
-    #     # Remove _duplicates to avoid recursion/hashing issues during unpickling
-    #     if "_duplicates" in state:
-    #         del state["_duplicates"]
-    #     return state
-
-    # def __setstate__(self, state):
-    #     self.__dict__.update(state)
-    #     # Restore _duplicates as empty set if missing
-    #     if "_duplicates" not in self.__dict__:
-    #         object.__setattr__(self, "_duplicates", set())
 
     def __hash__(self):
         return hash((self.name, self.path))

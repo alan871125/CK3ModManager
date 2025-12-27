@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
-
+from ..mod.descriptor import Mod
 
 @dataclass
 class ErrorSource:
@@ -10,10 +10,14 @@ class ErrorSource:
     key: str|None = None
     value: str|None = None
     line: int|None = field(default_factory = int)
+    file2: Path|None = None
     object2: str|None = None
     key2: str|None = None
     value2: str|None = None
-
+    
+    mod_sources: list[Mod] = field(default_factory=list, repr=False) # more than one source mod means unclear origin
+    def is_solved(self) -> bool:
+        return len(self.mod_sources) == 1 and self.file is not None 
     @classmethod
     def from_dict(cls, data:Dict[str,Any]):
         return cls(
@@ -22,6 +26,7 @@ class ErrorSource:
             key=data.get('key'),
             value=data.get('value'),
             line=int(data['line']) if 'line' in data and data['line'].isdigit() else None,
+            file2=data.get('file2'),
             object2=data.get('obj2'),
             key2=data.get('key2'),
             value2=data.get('value2'),

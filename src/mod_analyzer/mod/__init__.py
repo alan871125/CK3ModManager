@@ -1,5 +1,4 @@
-from .descriptor import Mod
-from .mod_list import ModList, DefinitionNode, DefinitionDirectoryNode, DefinitionFileNode, ModList, SourceList, SourceEntry
+from .mod_list import Mod, ModList
 from .manager import ModManager
 from .mod_loader import (
     locate_mod_from_file,
