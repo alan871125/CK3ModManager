@@ -152,12 +152,13 @@ class ErrorAnalyzer():
     def __init__(self, mod_manager):
         super().__init__()
         self.mod_manager: ModManager = mod_manager
-        self._needs_reload: bool = True
-        # self._error_table: pd.DataFrame
-        self._error_sources : dict[int, list[ErrorSource]] = {}
-        self.errors: list[ParsedError] = []
+        self.reset()
+        
+    def reset(self):
+        self.errors = []
+        self._needs_reload = True
+        self._error_by_mod = {}        
         ParsedError._count = 0  # reset error ID counter
-        self._error_by_mod: dict[str, dict[ParsedError, ErrorSource]] = {}
     @property
     def def_table(self)->DefinitionNode: # easy access to mod manager define table
         return self.mod_manager.def_table
@@ -171,12 +172,6 @@ class ErrorAnalyzer():
     #     if not hasattr(self, "_error_table") or self._error_table is None:
     #         self._error_table = pd.DataFrame([e.to_dict() for e in self.errors])
     #     return self._error_table    
-    @property
-    def error_sources(self) -> dict[int, list[ErrorSource]]:
-        if self._needs_reload:
-            self.distribute_errors(self.errors)
-            self._needs_reload = False
-        return self._error_sources
     @property
     def error_by_mod(self) -> dict[str, dict[ParsedError, ErrorSource]]:
         if self._needs_reload:

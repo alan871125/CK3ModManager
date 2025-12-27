@@ -104,37 +104,6 @@ class ErrorTreeModel(QAbstractItemModel):
 
     def _build_all_root_nodes(self):
         """Build the root level (mods) with ALL errors - called once at initialization"""
-        # Group errors by mod
-        # mod_errors = {}  # {mod_name: [(err, source), ...]}
-        # for id, err in enumerate(self.analyzer.errors):
-        #     sources: Optional[list[ErrorSource]] = err.sources
-        # #     break
-        #     for source in sources or []:
-        #         for mod in map(lambda m:m.name, source.mod_sources):
-        #             mod_errors.setdefault(mod, set()).add((id, source))
-        # # # for err_id, sources in self.error_sources.items():
-        # #     for source in sources:
-        # #         # Handle both string sources and SourceEntry objects
-        # #         if isinstance(source, str):
-        # #             continue
-                
-        # #         # Get mod name from source
-        # #         if hasattr(source, 'mod') and source.mod:
-        # #             mod_name = source.mod.name if hasattr(source.mod, 'name') else str(source.mod)
-        # #         else:
-        # #             mod_name = "Unknown Mod"
-                
-        # #         if mod_name not in mod_errors:
-        # #             mod_errors[mod_name] = []
-        # #         mod_errors[mod_name].append((err_id, source))
-        
-        # # Create ALL mod nodes (with all errors)
-        # for mod_name in sorted(mod_errors.keys()):
-        #     mod = self.analyzer.mod_manager.mod_list.get(mod_name)
-        #     mod_node = ErrorTreeNode(mod_name, None, NodeType.Mod, path = mod.path if mod else None)
-        #     mod_node.error_count = len(mod_errors[mod_name])
-        #     mod_node.error_data = mod_errors[mod_name]
-        #     self._all_mod_nodes.append(mod_node)
         for mod_name in sorted(self.analyzer.error_by_mod.keys()):
             mod = self.analyzer.mod_manager.mod_list.get(mod_name)
             mod_node = ErrorTreeNode(mod_name, None, NodeType.Mod, path = mod.path if mod else None)
@@ -178,7 +147,6 @@ class ErrorTreeModel(QAbstractItemModel):
                 for i, part in enumerate(parts):
 
                     full_path = os.path.join(full_path, part) if full_path else part
-                    
                     
                     if full_path not in node_map:
                         if is_file := (i == len(parts) - 1):
@@ -325,13 +293,9 @@ class ErrorTreeModel(QAbstractItemModel):
                         return err.type
                     return ""
                 elif column == 2: # Line (only for error nodes)
-                    if node.type == NodeType.Virtual and node.error_data:
-                        err = list(node.error_data.keys())[0]
-                        err_source: Optional[ErrorSource] = err.source
-                        if err_source and err_source.line is not None:
-                            return err_source.line
-                        return "" 
-                    return ""
+                    if node.type == NodeType.Virtual and node.line is not None:
+                        return node.line
+                    return "-"
                 elif column == 3: # Element/Key                
                     if node.type == NodeType.Virtual and node.error_data:
                         err = list(node.error_data.keys())[0]

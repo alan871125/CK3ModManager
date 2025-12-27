@@ -8,12 +8,13 @@ from mod_analyzer.mod.paradox import DefinitionNode, NodeType
 from mod_analyzer.error.source import ErrorSource
 from mod_analyzer.error.analyzer import ParsedError
 class TreeNode:
-    def __init__(self, name: str, parent: Optional['TreeNode']=None, node_type: NodeType=NodeType.Directory):
+    def __init__(self, name: str, parent: Optional['TreeNode']=None, node_type: NodeType=NodeType.Directory, path:Optional[Path]=None):
         self.name: str = name
         self.parent: Optional['TreeNode'] = parent
         self.children: list['TreeNode'] = []
         self._children_loaded: bool = False
         self.type: NodeType = node_type
+        self.path: Path = path if path else Path("./")/name  # Full path to the folder/file (for easy opening)
 
     def child(self, row: int) -> Optional['TreeNode']:
         """Get child at specific row"""
@@ -27,10 +28,19 @@ class TreeNode:
             return self.parent.children.index(self)
         return 0
     
+    def add_child(self, child: 'TreeNode'):
+        """Add a child node"""
+        child.parent = self
+        self.children.append(child)
+        if child.name!= "%CK3_MODS_DIR%":
+            child.path = self.path / child.name
+        else:
+            child.path = Path("%CK3_MODS_DIR%")
+    
 class ConflictTreeNode(TreeNode):
     """Represents a node in the conflict tree hierarchy"""
-    def __init__(self, name: str, parent: Optional['TreeNode']=None, node_type: NodeType=NodeType.Directory):
-        super().__init__(name, parent, node_type)
+    def __init__(self, name: str, parent: Optional['TreeNode']=None, node_type: NodeType=NodeType.Directory, path: Optional[Path]=None):
+        super().__init__(name, parent, node_type, path)
         self.conflict_count: int = 0    
         
 class ConflictTreeNodeEntry(ConflictTreeNode):
@@ -69,20 +79,20 @@ class ConflictTreeNodeEntry(ConflictTreeNode):
     @property
     def line(self) -> Optional[int]:
         return self._node.line
+    
 class ErrorTreeNode(TreeNode):
     """Represents a node in the error tree hierarchy"""
     children: List['ErrorTreeNode']
     
     def __init__(self, name: str, parent=None, node_type: NodeType=NodeType.Directory, path: Optional[Path] = None):
-        self.path: Optional[Path] = path  # Full path to the folder/file (for easy opening)
         self.error_count = 0
         self.error_data: Optional[dict[ParsedError, ErrorSource]] = None  # Stores ParsedError or error info
-        super().__init__(name, parent, node_type)
-    def add_child(self, child: 'ErrorTreeNode'):
-        """Add a child node"""
-        child.parent = self
-        self.children.append(child)
-    
+        super().__init__(name, parent, node_type, path)
+    @property
+    def line(self) -> Optional[int]:
+        """Get line number if applicable"""
+        if self.error_data and len(self.error_data) == 1:
+            return next(iter(self.error_data.values())).line
     def child_count(self) -> int:
         """Get number of children"""
         return len(self.children)
