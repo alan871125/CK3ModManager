@@ -4,13 +4,14 @@ import shutil
 import logging
 from pathlib import Path
 from typing import Optional
+from xml.dom import Node
 import PyQt5.QtWidgets as qt
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QModelIndex, QTimer
 from PyQt5.QtGui import QDropEvent, QCursor, QIcon
 
 from mod_analyzer.mod.descriptor import Mod
-from mod_analyzer.mod.mod_list import SourceEntry, ModList
+from mod_analyzer.mod.mod_list import ModList
 from mod_analyzer.mod.manager import ModManager
 from mod_analyzer.error import patterns
 from mod_analyzer.error.analyzer import ErrorAnalyzer, ParsedError
@@ -18,11 +19,11 @@ from app.directory import CK3_MODS_DIR
 from app.qt_widgets import TableWidgetDragRows
 from app.conflict_model import ConflictTreeModel
 from app.error_model import ErrorTreeModel
-from app.tree_nodes import ErrorTreeNode, ConflictTreeNode
+from app.tree_nodes import ErrorTreeNode, ConflictTreeNode, TreeNode
 from app.workers import FileTreeWorker, ErrorAnalysisWorker
 from app.settings import Settings, SettingsDialog
 from app.game import GameLauncher
-
+from mod_analyzer.mod.paradox import DefinitionNode, NodeType
 logging.basicConfig(format='[%(asctime)s][%(levelname)s] %(message)s', level=logging.INFO)
 # Set up loggers
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.mod_manager = ModManager()
         self.mod_manager.language = self.settings.game_language
         self.analyzer:ErrorAnalyzer = ErrorAnalyzer(self.mod_manager)
-        self.error_sources: dict[int, list[SourceEntry]]
+        # self.error_sources: dict[int, list[SourceEntry]]
         self.error_worker: Optional[ErrorAnalysisWorker] = None
         self.file_tree_worker: Optional[FileTreeWorker] = None
         
@@ -91,7 +92,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         
         # Track currently selected items for context menu actions
         self.selected_error_node: Optional[ErrorTreeNode] = None
-        self.selected_conflict_node: Optional[ConflictTreeNode] = None
+        self.selected_conflict_node: Optional[TreeNode] = None
         
         log_level = logging.DEBUG if self.settings.debug else logging.INFO
         logger.setLevel(log_level)
@@ -884,7 +885,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.selected_error_node = node
         
         # Log selection
-        if node.node_type == "error" and node.error_data:
+        if node.type == "error" and node.error_data:
             err_id, source = node.error_data
             logger.info(f"Selected error in: {source.file if hasattr(source, 'file') else 'Unknown'}")
         else:
@@ -915,7 +916,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.selected_conflict_node = node
         
         # Log selection
-        if node.node_type == "identifier":
+        if node.type == "identifier":
             logger.debug("Selected conflict: %s :: %s", node.filename, node.name)
         else:
             # Parent node (mod, folder, or file)
@@ -972,7 +973,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         fix_selected_action.triggered.connect(self.fix_selected_error)
         
         # Disable actions if this is not an actual error node
-        if node.node_type != "error":
+        if node.type != "error":
             fix_selected_action.setEnabled(False)
             show_error_log_action.setEnabled(False)
             open_mod_file_action.setEnabled(False)
@@ -1003,7 +1004,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         open_mod_file_action.triggered.connect(self.open_line_in_mod_file)
         
         # Disable actions if this is not an actual conflict identifier node
-        if node.node_type != "identifier":
+        if node.type != NodeType.Identifier:
             open_mod_file_action.setEnabled(False)
         
         # Show the menu at the cursor position
@@ -1026,7 +1027,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.conflict_tree.setColumnWidth(1, 150)  # Filename
         self.conflict_tree.setColumnWidth(2, 80)   # Line
         
-        total_conflicts = len(self.mod_manager.conflict_issues)
+        total_conflicts = len(self.mod_manager.conflict_identifiers)
         logger.info(f"Populated conflict tree with {total_conflicts} conflict definitions using lazy loading")
         
     # Right panel actions
@@ -1041,7 +1042,7 @@ class CK3ModManagerApp(qt.QMainWindow):
                 if self.selected_error_node.path and self.selected_error_node.path.exists():
                     path_to_open = self.selected_error_node.path
                 # Fallback: try to get path from error_data
-                elif self.selected_error_node.node_type == "error" and self.selected_error_node.error_data:
+                elif self.selected_error_node.type == "error" and self.selected_error_node.error_data:
                     err_id, source = self.selected_error_node.error_data
                     if hasattr(source, 'file') and source.file:
                         path_to_open = Path(source.file)
@@ -1049,10 +1050,11 @@ class CK3ModManagerApp(qt.QMainWindow):
             # Try conflict node
             elif self.selected_conflict_node:
                 # Check if node has a path attribute
-                if self.selected_conflict_node.path and self.selected_conflict_node.path.exists():
-                    path_to_open = self.selected_conflict_node.path
+                if hasattr(self.selected_conflict_node, 'full_path') and self.selected_conflict_node.full_path.exists():
+                    path_to_open = self.selected_conflict_node.full_path
                 # Fallback: try to get path from filename
-                elif self.selected_conflict_node.node_type == "identifier" and self.selected_conflict_node.filename:
+                elif self.selected_conflict_node.type == NodeType.Identifier and self.selected_conflict_node.parent:
+                    file_name = self.selected_conflict_node.parent.name
                     path_to_open = Path(self.selected_conflict_node.filename)
             if path_to_open is not None and path_to_open.parts[0] == "%CK3_MODS_DIR%":
                 path_to_open = CK3_MODS_DIR.joinpath(*path_to_open.parts[1:])
@@ -1091,7 +1093,7 @@ class CK3ModManagerApp(qt.QMainWindow):
     def show_line_in_error_log(self) -> None:
         """Show line in error.log and open it in default text editor"""
         try:
-            if not self.selected_error_node or self.selected_error_node.node_type != "error":
+            if not self.selected_error_node or self.selected_error_node.type != "error":
                 logger.warning("Please select an error item first")
                 return
             
@@ -1135,7 +1137,7 @@ class CK3ModManagerApp(qt.QMainWindow):
                 if self.selected_error_node.path and self.selected_error_node.path.exists():
                     file_path = self.selected_error_node.path if self.selected_error_node.path.is_file() else None
                 # Fallback: try to get from error_data
-                elif self.selected_error_node.node_type == "error" and self.selected_error_node.error_data:
+                elif self.selected_error_node.type == "error" and self.selected_error_node.error_data:
                     err_id, source = self.selected_error_node.error_data
                     if hasattr(source, 'file') and source.file:
                         file_path = Path(source.file)
@@ -1145,10 +1147,10 @@ class CK3ModManagerApp(qt.QMainWindow):
             # Try conflict node
             elif self.selected_conflict_node:
                 # Use path attribute if available
-                if self.selected_conflict_node.path and self.selected_conflict_node.path.exists():
-                    file_path = self.selected_conflict_node.path if self.selected_conflict_node.path.is_file() else None
+                if hasattr(self.selected_conflict_node, 'full_path') and self.selected_conflict_node.full_path.exists():
+                    file_path = self.selected_conflict_node.full_path if self.selected_conflict_node.full_path.is_file() else None
                 # Fallback: try to get from filename
-                elif self.selected_conflict_node.node_type == "identifier" and self.selected_conflict_node.filename:
+                elif self.selected_conflict_node.type == NodeType.Identifier and self.selected_conflict_node.filename:
                     file_path = Path(self.selected_conflict_node.filename)
                 # Note: ConflictTreeNode doesn't store line numbers
                 # Line info would need to be retrieved from conflict_data if needed

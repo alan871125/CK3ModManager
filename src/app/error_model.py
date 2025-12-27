@@ -3,13 +3,14 @@ error_model.py - Lazy loading model for error tree view
 """
 
 import os
+import re
 from typing import Any, Dict, Optional
 from pathlib import Path
 from PyQt5.QtCore import Qt, QAbstractItemModel, QModelIndex, QVariant
 
 from mod_analyzer.error.source import ErrorSource
-from mod_analyzer.mod.mod_list import SourceEntry
 from mod_analyzer.error.analyzer import ErrorAnalyzer, ParsedError
+from mod_analyzer.mod.paradox import DefinitionNode, NodeType
 from .tree_nodes import ErrorTreeNode
 import logging
 logger = logging.getLogger(__name__)
@@ -18,17 +19,18 @@ class ErrorTreeModel(QAbstractItemModel):
     
     def __init__(self, error_analyzer: ErrorAnalyzer, parent=None):
         super().__init__(parent)
-        self.analyzer = error_analyzer
-        self.root_node = ErrorTreeNode("root", None)
+        self.analyzer:ErrorAnalyzer = error_analyzer
+        self.root_node = ErrorTreeNode("root", None, node_type=NodeType.Virtual)
         self.filtered_error_types = None  # None means show all, set() means show none, set with types means filter
         
         # Cache all mod nodes once (with ALL errors)
-        self._all_mod_nodes = []
+        self._all_mod_nodes: list[ErrorTreeNode] = []
         self._build_all_root_nodes()
         
-    @property
-    def error_sources(self) -> Dict[int, list[SourceEntry]]:
-        return self.analyzer.error_sources
+    # @property
+    # def error_sources(self) -> Dict[int, list[SourceEntry]]:
+    #     return self.analyzer.error_sources
+    
     @property
     def errors(self) -> list[ParsedError]:
         return self.analyzer.errors
@@ -72,9 +74,10 @@ class ErrorTreeModel(QAbstractItemModel):
             # Quick check: does this mod have any errors of the selected types?
             has_visible = False
             visible_count = 0
-            
-            for err_id, _ in mod_node.error_data:
-                error_type = error_type_map.get(err_id)
+            if mod_node.error_data is None:
+                continue
+            for err, _ in mod_node.error_data.items():
+                error_type = error_type_map.get(err.id)
                 if error_type and error_type in self.filtered_error_types:
                     has_visible = True
                     visible_count += 1
@@ -102,30 +105,41 @@ class ErrorTreeModel(QAbstractItemModel):
     def _build_all_root_nodes(self):
         """Build the root level (mods) with ALL errors - called once at initialization"""
         # Group errors by mod
-        mod_errors = {}  # {mod_name: [(err, source), ...]}
-        
-        for err_id, sources in self.error_sources.items():
-            for source in sources:
-                # Handle both string sources and SourceEntry objects
-                if isinstance(source, str):
-                    continue
+        # mod_errors = {}  # {mod_name: [(err, source), ...]}
+        # for id, err in enumerate(self.analyzer.errors):
+        #     sources: Optional[list[ErrorSource]] = err.sources
+        # #     break
+        #     for source in sources or []:
+        #         for mod in map(lambda m:m.name, source.mod_sources):
+        #             mod_errors.setdefault(mod, set()).add((id, source))
+        # # # for err_id, sources in self.error_sources.items():
+        # #     for source in sources:
+        # #         # Handle both string sources and SourceEntry objects
+        # #         if isinstance(source, str):
+        # #             continue
                 
-                # Get mod name from source
-                if hasattr(source, 'mod') and source.mod:
-                    mod_name = source.mod.name if hasattr(source.mod, 'name') else str(source.mod)
-                else:
-                    mod_name = "Unknown Mod"
+        # #         # Get mod name from source
+        # #         if hasattr(source, 'mod') and source.mod:
+        # #             mod_name = source.mod.name if hasattr(source.mod, 'name') else str(source.mod)
+        # #         else:
+        # #             mod_name = "Unknown Mod"
                 
-                if mod_name not in mod_errors:
-                    mod_errors[mod_name] = []
-                mod_errors[mod_name].append((err_id, source))
+        # #         if mod_name not in mod_errors:
+        # #             mod_errors[mod_name] = []
+        # #         mod_errors[mod_name].append((err_id, source))
         
-        # Create ALL mod nodes (with all errors)
-        for mod_name in sorted(mod_errors.keys()):
+        # # Create ALL mod nodes (with all errors)
+        # for mod_name in sorted(mod_errors.keys()):
+        #     mod = self.analyzer.mod_manager.mod_list.get(mod_name)
+        #     mod_node = ErrorTreeNode(mod_name, None, NodeType.Mod, path = mod.path if mod else None)
+        #     mod_node.error_count = len(mod_errors[mod_name])
+        #     mod_node.error_data = mod_errors[mod_name]
+        #     self._all_mod_nodes.append(mod_node)
+        for mod_name in sorted(self.analyzer.error_by_mod.keys()):
             mod = self.analyzer.mod_manager.mod_list.get(mod_name)
-            mod_node = ErrorTreeNode(mod_name, None, "mod", path = mod.path if mod else None)
-            mod_node.error_count = len(mod_errors[mod_name])
-            mod_node.error_data = mod_errors[mod_name]
+            mod_node = ErrorTreeNode(mod_name, None, NodeType.Mod, path = mod.path if mod else None)
+            mod_node.error_count = len(self.analyzer.error_by_mod[mod_name])
+            mod_node.error_data = self.analyzer.error_by_mod[mod_name]
             self._all_mod_nodes.append(mod_node)
         
         # Update visible mods based on current filter
@@ -136,75 +150,73 @@ class ErrorTreeModel(QAbstractItemModel):
         if mod_node._children_loaded or mod_node.error_data is None:
             return
         
-        node_map = {}  # {path: node} for reusing nodes
+        node_map:dict[str, ErrorTreeNode] = {}  # {path: node} for reusing nodes
         
-        for err_id, source in mod_node.error_data:
+        for err, source in mod_node.error_data.items():
             # Apply filter
+            err_id = err.id
             if not self._should_include_error(err_id):
                 continue
                 
             # Get file path and make it relative to mod root if possible
-            file_path = Path(source.file) if hasattr(source, 'file') else Path("unknown")
+            for mod in source.mod_sources:
+                if source.file is None:
+                    file_path = Path("Unknown")
+                    rel_path = Path("Unknown")
+                elif source.file.exists():
+                    file_path = source.file
+                    rel_path = file_path.relative_to(mod.path)
+                else:
+                    file_path = mod.path/source.file
+                    rel_path = source.file
             
-            # Try to get relative path from mod
-            if hasattr(source, 'mod') and source.mod and hasattr(source.mod, 'path'):
-                try:
-                    rel_path = file_path.relative_to(source.mod.path)
-                except (ValueError, AttributeError):
-                    rel_path = file_path
-                # if file_path.parts[0] == "%CK3_MODS_DIR%": # this happens if the error file is at the root of mods dir (mod descriptor error)
-                #     file_path = CK3_MODS_DIR.joinpath(*file_path.parts[1:])
-            else:
-                rel_path = file_path
-            
-            # Build path parts
-            parts = rel_path.parts
-            
-            # Build hierarchy
-            parent = mod_node
+                # Build path parts
+                parts = rel_path.parts
+                # Build hierarchy
+                parent = mod_node
+                full_path = ""                
+                for i, part in enumerate(parts):
 
-            full_path = ""
-            
-            for i, part in enumerate(parts):
+                    full_path = os.path.join(full_path, part) if full_path else part
+                    
+                    
+                    if full_path not in node_map:
+                        if is_file := (i == len(parts) - 1):
+                            node_type = NodeType.File
+                        else:
+                            node_type = NodeType.Directory
+                        
+                        # Determine the actual filesystem path for this node
+                        node_path = None
+                        if is_file:
+                            # For file nodes, use the absolute file path
+                            node_path = file_path
+                        else:
+                            # For folder nodes, navigate up from file to get folder path
 
-                full_path = os.path.join(full_path, part) if full_path else part
-                is_file = (i == len(parts) - 1)
+                            levels_from_file = len(parts) - i - 1
+                            node_path = file_path
+                            for _ in range(levels_from_file):
+                                node_path = node_path.parent
+                        
+                        node = ErrorTreeNode(part, parent, node_type, path=node_path)
+                        
+                        if is_file:
+                            # Store list of errors for this file
+                            node.error_data = {}
+                        
+                        parent.add_child(node)
+                        node_map[full_path] = node
+                    
+                    parent = node_map[full_path]
                 
-                if full_path not in node_map:
-                    node_type = "file" if is_file else "folder"
-                    
-                    # Determine the actual filesystem path for this node
-
-                    node_path = None
-                    if is_file:
-                        # For file nodes, use the absolute file path
-                        node_path = file_path
-                    else:
-                        # For folder nodes, navigate up from file to get folder path
-
-                        levels_from_file = len(parts) - i - 1
-                        node_path = file_path
-                        for _ in range(levels_from_file):
-                            node_path = node_path.parent
-                    
-                    node = ErrorTreeNode(part, parent, node_type, path=node_path)
-                    
-                    if is_file:
-                        # Store list of errors for this file
-                        node.error_data = []
-                    
-                    parent.add_child(node)
-                    node_map[full_path] = node
-                
-                parent = node_map[full_path]
+                # Add error as child of file node
+                if full_path in node_map:
+                    file_node = node_map[full_path]
+                    if isinstance(file_node.error_data, dict):
+                        file_node.error_data[err] = source
+                        file_node.error_count = len(file_node.error_data)
             
-            # Add error as child of file node
-            if full_path in node_map:
-                file_node = node_map[full_path]
-                if isinstance(file_node.error_data, list):
-                    file_node.error_data.append((err_id, source))
-                    file_node.error_count = len(file_node.error_data)
-        
         # Now create error nodes under each file
         self._create_error_nodes(mod_node)
         
@@ -213,23 +225,23 @@ class ErrorTreeModel(QAbstractItemModel):
     def _create_error_nodes(self, parent_node: ErrorTreeNode):
         """Recursively create error nodes under file nodes"""
         for child in parent_node.children:
-            if child.node_type == "file" and child.error_data:
+            if child.type == NodeType.File and child.error_data:
                 # Create error nodes for this file
-                for err_id, source in child.error_data:
+                for err, source in child.error_data.items():
                     # Get file path for error node
-                    error_file_path = Path(source.file) if hasattr(source, 'file') else None
+                    error_file_path = source.file or Path("Unknown")
                     
                     error_node = ErrorTreeNode(
-                        f"Error #{err_id}",
+                        f"Error #{err.id}",
                         child,
-                        "error",
+                        NodeType.Virtual,
                         path=error_file_path
                     )
-                    error_node.error_data = (err_id, source)
+                    error_node.error_data = {err: source}
                     child.add_child(error_node)
                 # Mark as loaded
                 child._children_loaded = True
-            elif child.node_type == "folder":
+            elif child.type == NodeType.Directory:
                 # Recursively process folders
                 self._create_error_nodes(child)
     
@@ -244,7 +256,7 @@ class ErrorTreeModel(QAbstractItemModel):
             parent_node = parent.internalPointer()
         
         # Lazy load children if needed
-        if parent_node.node_type == "mod" and not parent_node._children_loaded:
+        if parent_node.type == NodeType.Mod and not parent_node._children_loaded:
             self._load_mod_children(parent_node)
         
         child_node = parent_node.child(row)
@@ -266,6 +278,17 @@ class ErrorTreeModel(QAbstractItemModel):
         
         return self.createIndex(parent_node.row(), 0, parent_node)
     
+    def hasChildren(self, parent: QModelIndex = QModelIndex()) -> bool:
+        """Check if node has children - optimized to avoid loading"""
+        if not parent.isValid():
+            return self.root_node.child_count() > 0
+            
+        parent_node = parent.internalPointer()
+        if parent_node.type == NodeType.Mod and not parent_node._children_loaded:
+            return parent_node.error_count > 0
+            
+        return parent_node.child_count() > 0
+
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         """Get number of rows under parent"""
         if parent.column() > 0:
@@ -274,9 +297,8 @@ class ErrorTreeModel(QAbstractItemModel):
         if not parent.isValid():
             parent_node = self.root_node
         else:
-            parent_node = parent.internalPointer()
-            # Lazy load children if needed
-            if parent_node.node_type == "mod" and not parent_node._children_loaded:
+            parent_node: ErrorTreeNode = parent.internalPointer()
+            if parent_node.type == NodeType.Mod and not parent_node._children_loaded:
                 self._load_mod_children(parent_node)
         
         return parent_node.child_count()
@@ -297,23 +319,22 @@ class ErrorTreeModel(QAbstractItemModel):
                 if column == 0:
                     # File/Folder name
                     return node.name
-                elif column == 1: # Error Type (only for error nodes)
-                    if node.node_type == "error" and node.error_data:
-                        err = self.errors[idx:=node.error_data[0]]
+                elif column == 1: # Error Type (only for error nodes) (Virtual nodes used to represent errors)
+                    if node.type == NodeType.Virtual and node.error_data:
+                        err = list(node.error_data.keys())[0]
                         return err.type
                     return ""
                 elif column == 2: # Line (only for error nodes)
-                    if node.node_type == "error" and node.error_data:
-                        err = self.errors[idx:=node.error_data[0]]
+                    if node.type == NodeType.Virtual and node.error_data:
+                        err = list(node.error_data.keys())[0]
                         err_source: Optional[ErrorSource] = err.source
                         if err_source and err_source.line is not None:
                             return err_source.line
                         return "" 
                     return ""
                 elif column == 3: # Element/Key                
-                    if node.node_type == "error" and node.error_data:
-                        err_id, source = node.error_data
-                        err = self.errors[idx:=err_id]
+                    if node.type == NodeType.Virtual and node.error_data:
+                        err = list(node.error_data.keys())[0]
                         err_source: Optional[ErrorSource] = err.source
                         if err_source:
                             return ', '.join(filter(None, [
@@ -325,7 +346,7 @@ class ErrorTreeModel(QAbstractItemModel):
                         return f"({node.error_count} errors)"
                     return ""
             except IndexError as e:
-                logger.exception(f"IndexError in data(index = {idx}): {e}")
+                logger.exception(f"IndexError in data({node.error_data}): {e}")
         
         return QVariant()
     

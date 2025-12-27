@@ -22,7 +22,7 @@ class Settings:
     enabled_only: bool = False
     ck3_docs_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III")
     ck3_mods_path: str = str(CK3_MODS_DIR)
-    error_log_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III/error.log")
+    error_log_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III/logs/error.log")
     launcher_settings_path: str = r"C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III\launcher\launcher-settings.json"
     exe_args: str = "-gdpr-compliant"# default exe args from launcher-settings.json
     debug: bool = False
