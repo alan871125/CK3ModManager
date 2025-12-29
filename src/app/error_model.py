@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 class ErrorTreeModel(QAbstractItemModel):
     """Model for lazy-loading error tree"""
-    
+    _columns = ["File / Folder", "Error Type", "Line", "Log Line", "Related Object"]
     def __init__(self, error_analyzer: ErrorAnalyzer, parent=None):
         super().__init__(parent)
         self.analyzer:ErrorAnalyzer = error_analyzer
@@ -106,7 +106,7 @@ class ErrorTreeModel(QAbstractItemModel):
         """Build the root level (mods) with ALL errors - called once at initialization"""
         for mod_name in sorted(self.analyzer.error_by_mod.keys()):
             mod = self.analyzer.mod_manager.mod_list.get(mod_name)
-            mod_node = ErrorTreeNode(mod_name, None, NodeType.Mod, path = mod.path if mod else None)
+            mod_node = ErrorTreeNode(mod_name, self.root_node, NodeType.Mod, path = mod.path if mod else None)
             mod_node.error_count = len(self.analyzer.error_by_mod[mod_name])
             mod_node.error_data = self.analyzer.error_by_mod[mod_name]
             self._all_mod_nodes.append(mod_node)
@@ -273,7 +273,7 @@ class ErrorTreeModel(QAbstractItemModel):
     
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         """Get number of columns"""
-        return 4  # File/Folder, Error Type, Line, Element/Key
+        return 4  # File/Folder, Error Type, Line, Related Object
     
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
         """Get data for display"""
@@ -296,15 +296,19 @@ class ErrorTreeModel(QAbstractItemModel):
                     if node.type == NodeType.Virtual and node.line is not None:
                         return node.line
                     return "-"
-                elif column == 3: # Element/Key                
+                elif column == 3: # Log Line (only for error nodes)
+                    if node.type == NodeType.Virtual and node.log_line is not None:
+                        return node.log_line
+                    return "-"
+                elif column == 4: # Related Object                
                     if node.type == NodeType.Virtual and node.error_data:
                         err = list(node.error_data.keys())[0]
-                        err_source: Optional[ErrorSource] = err.source
+                        err_source: Optional[ErrorSource] = node.error_data[err]
                         if err_source:
                             return ', '.join(filter(None, [
-                                err_source.object, err_source.object2,
-                                err_source.key, err_source.key2,
-                                err_source.value, err_source.value2
+                                err_source.object,
+                                err_source.key,
+                                err_source.value
                             ]))
                     elif node.error_count > 0:
                         return f"({node.error_count} errors)"
@@ -317,7 +321,7 @@ class ErrorTreeModel(QAbstractItemModel):
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):
         """Get header data"""
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            headers = ["File / Folder", "Error Type", "Line", "Element/Key"]
+            headers = self._columns
             if 0 <= section < len(headers):
                 return headers[section]
         return QVariant()

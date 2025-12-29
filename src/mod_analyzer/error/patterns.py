@@ -55,9 +55,9 @@ regex = DualAccessDict(
     OBJ_NOT_SET_USED = r"(?P<type>[\w]+( target)?) '(?P<key>[^\']+)' is used but is never set.",
     
     # holding_type.cpp:118
-    DUPLICATE_BUILDING_TYPE = r"Duplicate holding building type (?P<obj>[^\s]+), for holding (?P<obj2>[^\s]+)",
+    DUPLICATE_BUILDING_TYPE = r"Duplicate holding building type (?P<type>[^\s]+), for holding (?P<obj>[^\s]+)",
     # holding_type.cpp:138
-    INVALID_BUILDING_TYPE = r"Invalid building type (?P<obj>[^\s]+), for holding (?P<obj2>[^\s]+)",
+    INVALID_BUILDING_TYPE = r"Invalid building type (?P<type>[^\s]+), for holding (?P<obj>[^\s]+)",
     # jomini_eventmanager.cpp:370
     EVENT_ORPHANED = r"Event (?P<obj>[^\s]+) is orphaned",
     # jomini_eventmanager.cpp:370
@@ -165,7 +165,7 @@ regex = DualAccessDict(
     INVALID_LANDED_TITLE = r"Failed to fetch a valid landed title '(?P<value>[^']+)' at location 'file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)'",
     CHARACTER_INTERACTION_FILTER_ERROR = r"(?P<message>.*) at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
     # jomini_script_system.cpp:303
-    SCRIPT_ERROR = r'(file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\))',
+    SCRIPT_ERROR = r'(file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\))(\[args#\d+\])?',
     
 )
 source_related_errors = {

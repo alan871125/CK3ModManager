@@ -432,9 +432,11 @@ impl DefinitionNode {
         let source = self.get_super_source_by_type(NodeType::Mod).unwrap();
         // let mod_data = arena.mod_data.get(&source.id).unwrap();
         let mod_path = arena.mod_data.get(&source.id).unwrap().path.clone();
-        let full_path = mod_path
-                                    .join(self.get_rel_dir())
-                                    .join(self.get_name());
+        let mut full_path = mod_path
+                                    .join(self.get_rel_dir());
+        if self.get_type() == NodeType::Identifier {
+            full_path = full_path.join(self.get_name());
+        }
         let pathlib = PyModule::import(py, intern!(py, "pathlib"))?;
         let path_cls = pathlib.getattr(intern!(py, "Path"))?;
         let path_obj = path_cls.call1((full_path.to_string_lossy().to_string(),))?;

@@ -33,7 +33,6 @@ class ConflictTreeModel(QAbstractItemModel):
             def_nodes = self.mod_manager.conflicts_by_mod[mod_name]
             mod_nodes[mod_name] = ConflictTreeNode(mod_name, self.root_node, NodeType.Mod, path=Path(mod_name))
             mod_nodes[mod_name].conflict_count = len(def_nodes)
-            self.root_node.add_child(mod_nodes[mod_name])
         
     def _load_mod_children(self, mod_node: ConflictTreeNode):
         if mod_node._children_loaded:
@@ -70,7 +69,6 @@ class ConflictTreeModel(QAbstractItemModel):
                     node.conflict_count = len(conflicts) if conflicts else 0
                 else:
                     node = ConflictTreeNode(part, parent)
-                parent.add_child(node)
                 parent = node
         mod_node._children_loaded = True
        

@@ -10,11 +10,13 @@ from mod_analyzer.error.analyzer import ParsedError
 class TreeNode:
     def __init__(self, name: str, parent: Optional['TreeNode']=None, node_type: NodeType=NodeType.Directory, path:Optional[Path]=None):
         self.name: str = name
-        self.parent: Optional['TreeNode'] = parent
         self.children: list['TreeNode'] = []
         self._children_loaded: bool = False
         self.type: NodeType = node_type
         self.path: Path = path if path else Path("./")/name  # Full path to the folder/file (for easy opening)
+        self.parent: Optional['TreeNode'] = parent
+        if self.parent is not None:
+            self.parent.add_child(self)
 
     def child(self, row: int) -> Optional['TreeNode']:
         """Get child at specific row"""
@@ -33,7 +35,8 @@ class TreeNode:
         child.parent = self
         self.children.append(child)
         if child.name!= "%CK3_MODS_DIR%":
-            child.path = self.path / child.name
+            if child.type in {NodeType.Directory, NodeType.File}:
+                child.path = self.path / child.name
         else:
             child.path = Path("%CK3_MODS_DIR%")
     
@@ -48,16 +51,16 @@ class ConflictTreeNodeEntry(ConflictTreeNode):
     acts as a entry pointing to the actual definition node.
     """
     def __init__(self, definition_node: DefinitionNode, parent: Optional['TreeNode']=None):
-        super().__init__(definition_node.name, parent, node_type=definition_node.type)
         self._node: DefinitionNode = definition_node
         self._conflict_count: int = 0
         self._sources: Optional[list[str]] = None
+        super().__init__(definition_node.name, parent, node_type=definition_node.type)
     @property
     def name(self) -> str:
         return self._node.name
     @name.setter
     def name(self, value: str):
-        self._name = value
+        pass
     @property
     def sources(self) -> Optional[list[str]]:
         if self._sources is None and (mod_sources:=self._node.mod_sources):
@@ -89,6 +92,11 @@ class ErrorTreeNode(TreeNode):
         self.error_data: Optional[dict[ParsedError, ErrorSource]] = None  # Stores ParsedError or error info
         super().__init__(name, parent, node_type, path)
     @property
+    def log_line(self) -> Optional[int]:
+        """Get log line number if applicable"""
+        if self.error_data and len(self.error_data) == 1:
+            return next(iter(self.error_data.keys())).log_line
+    @property
     def line(self) -> Optional[int]:
         """Get line number if applicable"""
         if self.error_data and len(self.error_data) == 1:
@@ -105,4 +113,4 @@ class ErrorTreeNode(TreeNode):
     
     def column_count(self) -> int:
         """Number of columns"""
-        return 4  # File/Folder, Error Type, Line, Element/Key
+        return 4  # File/Folder, Error Type, Line, Related Object

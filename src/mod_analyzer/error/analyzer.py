@@ -20,6 +20,26 @@ CK3_DOC_DIR = Path.home()/"Documents"/"Paradox Interactive"/"Crusader Kings III"
 pkg = (__package__ or __name__).split('.')[0]
 logger = logging.getLogger(pkg)
 
+ERRORS_NOT_ENOUGH_INFO = {
+    'FAILED_TO_READ_KEY_REFERENCE', # key & line given
+    'TRYING_TO_IMPORT_LOC_KEY_OUTSIDE_OF_LANGUAGE', # only loc key given, def_table only stores localization of selected language
+    # only loc key given, likely no localization definition.
+    'MISSING_LOCALIZATION', 'MISSING_LOC_KEY_KEY_ONLY', 
+    "MISSING_LOC", # not sure for this one.
+    # Only Key:
+    'OBJ_SET_NOT_USED', 'OBJ_NOT_SET_USED',
+    'LOC_STR_DATA_ERROR' # This could be possibly identified if knowing what causes the error
+    
+}
+class ModSourcedPath(Path):
+    """A Path with an associated source mod."""
+    mod_source: Optional[Mod]
+    def __new__(cls, *args, mod_source: Optional[Mod]=None, **kwargs):
+        obj = super().__new__(cls, *args, **kwargs)
+        obj.mod_source = mod_source
+        return obj
+    def set_mod_source(self, mod: Mod):
+        self.mod_source = mod
 @dataclass
 class ParsedError:
     _count: int = field(default=0, init=False, repr=False)
@@ -64,9 +84,9 @@ class ErrorParser():
             for m in error_pattern.finditer(msg):
                 details = m.groupdict()
                 if error_type == 'SCRIPT_ERROR':
-                    sources.append(ScriptErrorSource.from_dict(details))            
+                    sources.extend(ScriptErrorSource.from_dict(details))            
                 else:
-                    sources.append(ErrorSource.from_dict(details))
+                    sources.extend(ErrorSource.from_dict(details))
         return sources
     
     def parse_logs(self, logs: str, deduplicate: bool = True)-> dict[str, list[ParsedError]]:
@@ -192,33 +212,30 @@ class ErrorAnalyzer():
         results = {} # {mod_id: mod_info}
         for err in parsed_errors:
             self.locate_error_sources(err)
-            if not err.source:
+            if not err.sources:
                 continue
             ### DEBUGGING POINT ###    
-            if len(err.source.mod_sources)>1 and err.type in {
-                'DUPLICATE_LOC_KEY',
-                "GUI_DUPLICATE_CHILD_WIDGET"
-            }:
+            if len(err.sources)>1 and err.type!="SCRIPT_ERROR":
+            # err.type in {
+            #     'DUPLICATE_LOC_KEY',
+            #     "GUI_DUPLICATE_CHILD_WIDGET"
+            #     "LOC_KEY_HASH_COLLISION",
+            # }:
                 pass # debug point
-            elif len(err.source.mod_sources)==0:
-                if err.type in {
-                'FAILED_TO_READ_KEY_REFERENCE',
-                'TRYING_TO_IMPORT_LOC_KEY_OUTSIDE_OF_LANGUAGE', # only loc key given, def_table only stores localization of selected language
-                'MISSING_LOCALIZATION', # only loc key given, likely no localization definition.
-                }:
+            for source in err.sources:
+                if not source.mod_sources:
+                    if err.type in ERRORS_NOT_ENOUGH_INFO:
+                        continue # DEBUG POINT
                     continue
-                pass # debug point
-            for mod in err.source.mod_sources:
-                if mod is None:
-                    continue
-                self._error_by_mod.setdefault(mod.name, {}).update({err:err.source})
+                for mod in source.mod_sources:
+                    self._error_by_mod.setdefault(mod.name, {}).update({err:source})
             ### DEBUGGING POINT ###
             # sources: tuple[bool, list[ErrorSource]] = 
             # results[err.id] = sources
         self._error_sources = results
         return results       
         
-    def get_error_source_mod_candidates(self, source: ErrorSource) -> list[DefinitionNode]:
+    def get_error_source_identifier_candidates(self, source: ErrorSource) -> list[DefinitionNode]:
         """Get the candidate mods that could be the source of the error."""
         identifiers: list[DefinitionNode] = []
             # source.file = rel_path # TODO: abs path Temporarily changed to relative path, keep both?
@@ -235,27 +252,17 @@ class ErrorAnalyzer():
         elif source.file is not None: # relative path given
             if (identifier:= self.def_table.get_by_dir(source.file)):
                 identifiers.append(identifier)            
-            if source.file2 and (identifier2:= self.def_table.get_by_dir(source.file2)):
-                identifiers.append(identifier2)            
         else:
             if source.object is not None: # gets multiple identifiers if conflict exists
                 identifiers.extend(self.mod_manager.get_def_node_by_name(source.object))
-                if source.object2 is not None:
-                    identifiers.extend(self.mod_manager.get_def_node_by_name(source.object2))
             elif source.key is not None: # Least precise way
                 identifiers.extend(self.mod_manager.get_def_node_by_name(source.key))
-                if source.key2 is not None:
-                    identifiers.extend(self.mod_manager.get_def_node_by_name(source.key2))
             else:
                 pass
             if len(identifiers) == 1:
                 source.file = identifiers[0].rel_dir / identifiers[0].name
-        candidates = list(set(chain.from_iterable(identifier.mod_sources for identifier in identifiers)))
-        if len(candidates)>1:
-            if source.line is not None:
-                pass # debug point
-        # candidates are file sources, actual mod_source can be located later
-        return candidates
+        
+        return identifiers
     
     def get_mod_from_mod_node(self, mod_node: DefinitionNode) -> Optional[Mod]:
         """Get the Mod instance from a mod definition node."""
@@ -282,7 +289,29 @@ class ErrorAnalyzer():
                     continue
                 err.source.mod_sources.append(mod)
         
-                
+    def locate_building_error_source(self, err:ParsedError):
+        assert err.type in {"DUPLICATE_BUILDING_TYPE", "INVALID_BUILDING_TYPE"}
+        assert err.source is not None
+        identifiers = self.get_error_source_identifier_candidates(err.source)
+        for identifier in identifiers:
+            mod_candidates = identifier.mod_sources
+            if len(mod_candidates) >1:
+                logger.debug("Multiple mod candidates found for identifier %s: %s", identifier.name, mod_candidates)
+            if mod_candidates:
+                mod_node = mod_candidates[-1]
+                if not (mod := self.mod_manager.mod_list.get(mod_node.name)):
+                    continue
+            else:
+                continue
+            if identifier.parent and (file_path:=identifier.parent.full_path).exists():
+                file_content = file_path.read_text(encoding="utf-8-sig", errors="ignore")
+                if (err.source.object      and err.source.object in file_content and 
+                    err.source.object_type and err.source.object_type in file_content):
+                    err.source.file = identifier.parent.full_path
+                    err.source.mod_sources = [mod]
+                    return
+        logger.error("Could not uniquely identify source mod for building error: %s", err)
+        
     def locate_version_error_source(self, err:ParsedError):
         assert err.type == "INVALID_SUPPORTED_VERSION"
         assert err.source is not None
@@ -296,11 +325,8 @@ class ErrorAnalyzer():
         err.source.mod_sources = [mod] if mod else []
         
     def locate_error_sources(self, err:ParsedError):
-        '''Locate the source mods for a given error.
-        
-        Returns:
-            tuple[bool,list[DefinitionNode]]: confidence flag (bool) and list of candidate sources (FileNodes).
-            
+        '''
+        Locate the source mods for a given error.            
         '''        
         candidates: list[DefinitionNode] = [] # candidate FileNodes
         # ----- Special Cases -----
@@ -308,62 +334,51 @@ class ErrorAnalyzer():
             return self.locate_encoding_error_source(err)
         elif err.type == "INVALID_SUPPORTED_VERSION":
             return self.locate_version_error_source(err)
-        elif len(err.sources)>1:
-            if err.type != "SCRIPT_ERROR":
-                pass
-            for s in err.sources:
-                candidates = self.get_error_source_mod_candidates(s)
-                if len(candidates) == 1:
-                    if res:=self.mod_manager.get_node_mod_sources(candidates[0]):
-                        s.mod_sources = list(res.values())
-                # candidates.extend(self.get_error_source_mod_candidates(s))
-            return
+        elif err.type in {"DUPLICATE_BUILDING_TYPE", "INVALID_BUILDING_TYPE"}:
+            return self.locate_building_error_source(err)
         # ----- Problematic Cases -----
-        elif not err.source:
+        elif err.source is None:
             logger.error("No source information found for error: %s", err)
             # return False, []
             return 
         # ----- General Case -----
-        if err.source.file and err.source.file.exists(): # absolute path given
-            if mod:=self.mod_manager.get_file_mod_source(err.source.file):
-                err.source.mod_sources = [mod]
-            return
-        else:
-            candidates = self.get_error_source_mod_candidates(err.source)
-        if err.type == 'DUPLICATE_LOC_KEY':
-            pass # debug point
-        if len(candidates) == 1:
-            if mod:=self.mod_list.get(candidates[0].name):
-                err.source.mod_sources = [mod]
-        elif len(candidates) > 1:
-            err.source.mod_sources = []
-            for c in candidates:
-                if mod:=self.mod_list.get(c.name):
-                    err.source.mod_sources.append(mod)
-            if err.type in {"DUPLICATE_LOC_KEY", "LOC_KEY_HASH_COLLISION"}:
-                pass # TODO: handle duplicate loc key error properly
-            # returning only the enabled mod for now
-            elif len(err.source.mod_sources) == 0:
-                logger.error("(Report if you see this ERROR) No enabled mod found among candidates for error,  %s", err)
-            elif len(err.source.mod_sources) > 1:
-                if err.source.line:
-                    pass # debug point
-                logger.error("(Report if you see this ERROR) Conflict checking not implemented yet: Could not uniquely identify source mod for error: %s", err)
-            return
-        else:# candidate not found    
-            if err.type in {
-                'FAILED_TO_READ_KEY_REFERENCE',
-                'TRYING_TO_IMPORT_LOC_KEY_OUTSIDE_OF_LANGUAGE', # only loc key given, def_table only stores localization of selected language
-                'MISSING_LOCALIZATION', # only loc key given, likely no localization definition.
-            }:
-                logger.warning("Not enough information to determine error source for: %s", err)
-            elif "LOC" in err.type:
-                logger.warning("Error sourcing for this error is not implemented yet: %s", err) #TODO: 'LOC_KEY_HASH_COLLISION': can be solved if two candidates are found
-            elif err.source and err.source.file:
-                if err.source.file.parts[0] == 'gui':
+        for source in err.sources:
+            if source.file and source.file.exists(): # absolute path given
+                if mod:=self.mod_manager.get_file_mod_source(source.file):
+                    source.mod_sources.append(mod)
+                continue
+            
+            identifiers = self.get_error_source_identifier_candidates(source)
+            candidates = list(set(chain.from_iterable(identifier.mod_sources for identifier in identifiers)))
+            
+            if len(candidates) == 1:
+                if mod:=self.mod_list.get(candidates[0].name):
+                    source.mod_sources.append(mod)
+                    if source.file is None:
+                        source.file = candidates[0].rel_dir / candidates[0].name
+            elif len(candidates) > 1:
+                for c in candidates:
+                    if mod:=self.mod_list.get(c.name):
+                        source.mod_sources.append(mod)
+                if len(source.mod_sources) == 0:
+                    logger.error("(Report if you see this ERROR) No enabled mod found among candidates for error,  %s", err)
+                elif len(source.mod_sources) > 1:                    
+                    if source.line:
+                        logger.error("(Report if you see this ERROR) Conflict checking not implemented: source mod for error could possibly be identified with definition line but wasn't!: %s", err)
+                    else:
+                        logger.error("(Report if you see this ERROR) Conflict checking not implemented: Could not uniquely identify source mod for error: %s", err)
+            else:# candidate not found    
+                if err.type in ERRORS_NOT_ENOUGH_INFO:
+                    # not_enough_info
+                    logger.debug("Not enough information to determine error source for: %s", err)
+                elif "LOC" in err.type:
+                    # loc_not_implemented
+                    logger.warning("Error sourcing for this error is not implemented yet: %s", err) #TODO: 'LOC_KEY_HASH_COLLISION': can be solved if two candidates are found
+                elif source.file and source.file.parts[0] == 'gui':
+                    # gui_not_implemented
                     logger.warning("Error sourcing for GUI files not implemented yet: %s", err)
-            else:
-                logger.error("Error source not found for error: %s", err)
+                else:
+                    logger.error("Error source not found for error: %s", err)
         return
 
 

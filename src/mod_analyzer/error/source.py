@@ -7,30 +7,38 @@ from ..mod.descriptor import Mod
 class ErrorSource:
     file: Path|None = None
     object: str|None = None
+    object_type:str|None = None
     key: str|None = None
     value: str|None = None
     line: int|None = field(default_factory = int)
-    file2: Path|None = None
-    object2: str|None = None
-    key2: str|None = None
-    value2: str|None = None
     
     mod_sources: list[Mod] = field(default_factory=list, repr=False) # more than one source mod means unclear origin
     def is_solved(self) -> bool:
         return len(self.mod_sources) == 1 and self.file is not None 
     @classmethod
-    def from_dict(cls, data:Dict[str,Any]):
-        return cls(
+    def from_dict(cls, data:Dict[str,Any]) -> list['ErrorSource']:
+        sources = []
+        s1 = cls(
             file=data.get('file'),
             object=data.get('obj'),
+            object_type=data.get('type'),
             key=data.get('key'),
             value=data.get('value'),
             line=int(data['line']) if 'line' in data and data['line'].isdigit() else None,
-            file2=data.get('file2'),
-            object2=data.get('obj2'),
-            key2=data.get('key2'),
-            value2=data.get('value2'),
         )
+        sources.append(s1)
+        
+        if any(k in data for k in ['file2', 'obj2', 'key2', 'value2']):
+            s2 = cls(
+                file=data.get('file2'),
+                object=data.get('obj2'),
+                key=data.get('key2'),
+                value=data.get('value2'),
+                line=int(data['line2']) if 'line2' in data and data['line2'].isdigit() else None,
+            )
+            sources.append(s2)
+        return sources
+
     def __setattr__(self, name: str, value: Any) -> None:
         if name == 'file' and value is not None:
             value = Path(value)
@@ -42,9 +50,6 @@ class ErrorSource:
             self.key,
             self.value,
             self.line,
-            self.object2,
-            self.key2,
-            self.value2,
         ))
     def __repr__(self) -> str:
         return ('ErrorSource('+
@@ -56,9 +61,10 @@ class ScriptErrorSource(ErrorSource):
     trigger: str|None = None
     @classmethod
     def from_dict(cls, data:Dict[str,Any]):
-        x = super().from_dict(data)
-        x.trigger = data.get('trigger')
-        return x
+        sources = super().from_dict(data)
+        for s in sources:
+            s.trigger = data.get('trigger')
+        return sources
     def __hash__(self):
         return super().__hash__() ^ hash(self.trigger)
     def __repr__(self) -> str:
