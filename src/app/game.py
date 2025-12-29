@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 import json
+import subprocess
+import shlex
 
 class GameLauncher:
     def __init__(self, launcher_settings_path: Path|str):
@@ -9,8 +11,13 @@ class GameLauncher:
         self.settings = LauncherSettings.load(launcher_settings_path)
     def launch_game(self, exe_args: str|None = None):
         exe_path = self.settings.absExePath
-        exe_args = exe_args or self.settings.exeArgs
-        os.startfile(f'"{exe_path}" {exe_args}')    
+        exe_args = exe_args or self.settings.exeArgs        
+        cmd = [str(exe_path)]
+        if exe_args:
+            # posix=False is important on Windows to handle backslashes in paths correctly
+            cmd.extend(shlex.split(exe_args, posix=os.name != 'nt'))
+            
+        subprocess.Popen(cmd, cwd=os.path.dirname(exe_path))
 
 @dataclass
 class LauncherSettings:

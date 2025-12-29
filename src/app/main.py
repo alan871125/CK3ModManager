@@ -683,6 +683,38 @@ class CK3ModManagerApp(qt.QMainWindow):
         """Launch the game executable"""
         # self.apply_profile()  # Ensure profile is applied before launching
         self.mod_manager.save_profile("<Default>")
+        
+        # Export mods to SQLite
+        try:
+            # Import here to avoid circular imports if any, or just to keep it localized
+            # Assuming sqlite_exporter is in the python path (src folder)
+            from sqlite_exporter import CK3ModExporter
+            
+            # Get enabled mods
+            enabled_mods = self.mod_manager.mod_list.enabled
+            
+            # Get game data path from launcher settings
+            game_data_path = self.game_launcher.settings.gameDataPath
+            
+            exporter = CK3ModExporter(str(game_data_path))
+            
+            # Use current profile name as playset name, or "CK3ModManager"
+            playset_name = self.profile_combo.currentText()
+            if playset_name == "<Default>":
+                playset_name = "CK3ModManager"
+                
+            logger.info(f"Exporting playset '{playset_name}' to SQLite database...")
+            exporter.export_mods(
+                playset_name=playset_name,
+                mod_list = self.mod_manager.mod_list,
+                enabled_only = True,
+            )
+            logger.info("Export successful.")
+            
+        except Exception as e:
+            logger.error(f"Failed to export mods to SQLite: {e}")
+            qt.QMessageBox.warning(self, "Export Error", f"Failed to export mods to database:\n{e}\n\nThe game might not load mods correctly.")
+
         logger.info("Launching game...")
         self.game_launcher.launch_game(exe_args=self.settings.exe_args)
         
