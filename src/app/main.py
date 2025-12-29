@@ -98,8 +98,6 @@ class CK3ModManagerApp(qt.QMainWindow):
         event.accept()
     
     def initUI(self):
-        # Create menu bar
-        self.create_menu_bar()
         
         # Central widget and main layout
         self.central_widget = qt.QWidget()
@@ -117,6 +115,9 @@ class CK3ModManagerApp(qt.QMainWindow):
         
         # Main content area (now just the left panel, no right panel)
         self.create_left_panel()
+        
+        # Create menu bar
+        self.create_menu_bar()
         
         # Log section at bottom
         self.create_log_section()
@@ -140,7 +141,16 @@ class CK3ModManagerApp(qt.QMainWindow):
         help_action = qt.QAction("About", self)
         help_action.triggered.connect(self.show_help)
         help_menu.addAction(help_action)
-    
+        
+        # doesn't actually work, will be removed
+        # tools_menu = menubar.addMenu("Tools")
+        # tools_menu_hide_action = qt.QAction("Hide Disabled Mods", self)
+        # tools_menu.addAction(tools_menu_hide_action)
+        # tools_menu_hide_action.triggered.connect(self.mod_table.toggle_hide_disabled_mods)    
+        # tools_menu_unhide_action = qt.QAction("Unhide Disabled Mods", self)
+        # tools_menu.addAction(tools_menu_unhide_action)
+        # tools_menu_unhide_action.triggered.connect(self.mod_table.toggle_unhide_disabled_mods)
+        
     def create_top_buttons(self):
         """Create the top button panel"""
         button_layout = qt.QHBoxLayout()
@@ -886,30 +896,31 @@ class CK3ModManagerApp(qt.QMainWindow):
         if editor is None:
             pass
         elif editor.lower() in ("notepadpp", "notepad++"):
-            exe = shutil.which("notepad++")
-            if exe:
-                subprocess.Popen([exe, "multiInst", f"-n{line}", f'"{str(file_path)}"'])
+            if exe:=next(filter(lambda p:Path(p).exists(),[
+                shutil.which("notepad++") or
+                r"C:\Program Files\Notepad++\notepad++.exe",
+                r"C:\Program Files (x86)\Notepad++\notepad++.exe"
+            ])):
+                subprocess.Popen([exe, "-multiInst", f"-n{line}", f'{str(file_path)}'])
+                logger.info(f"Opened {file_path} at line {line} in Notepad++")
                 return
         elif editor.lower() in ("vscode", "code"):
-            exe = shutil.which("code")
-            if exe:
+            if exe:=shutil.which("code"):
                 subprocess.Popen([exe, "-g", f'{str(file_path)}:{line}'])
+                logger.info(f"Opened {file_path} at line {line} in VSCode")
                 return
         logger.warning("Opening file without specific line number (editor not supported)")
         return os.startfile(file_path)
-
     
     def show_line_in_error_log(self) -> None:
         """Show line in error.log and open it in default text editor"""
         try:
-            if not self.selected_error_node or self.selected_error_node.type != "error":
+            if not self.selected_error_node or self.selected_error_node.type != NodeType.Virtual:
                 logger.warning("Please select an error item first")
-                return
-            
+                return            
             if not self.selected_error_node.error_data:
                 logger.warning("No error data available")
-                return
-            
+                return            
             err, source = next(iter(self.selected_error_node.error_data.items()))
             
             # Find the error.log file
@@ -918,11 +929,10 @@ class CK3ModManagerApp(qt.QMainWindow):
             if not error_log_path.exists():
                 logger.error(f"error.log not found at: {error_log_path}")
                 return
-            err:ParsedError = self.analyzer.errors[err.id]
             self.open_file_at_line(
                 error_log_path, 
                 err.log_line or 0,
-                "notepad++"                
+                self.settings.text_editor               
             )
             
             # Log the line number if available
@@ -970,7 +980,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             self.open_file_at_line(
                 file_path, 
                 int(line_number or 0),
-                "vscode"                
+                self.settings.text_editor               
             )
             
             if line_number:
@@ -1102,12 +1112,12 @@ class CK3ModManagerApp(qt.QMainWindow):
         if profile_name == "<Default>": # load from dlc_load.json
             self.mod_manager.load_profile(
                 "<Default>", 
-                enabled_only=self.settings.enabled_only)
+                profile_only=self.settings.profile_only)
         else:
             profile_path = Path("profiles")/profile_name/"dlc_load.json"
             self.mod_manager.load_profile(
                 profile_path,
-                enabled_only=self.settings.enabled_only)
+                profile_only=self.settings.profile_only)
             
     def save_profile(self):        
         """Save current mod list as a profile."""

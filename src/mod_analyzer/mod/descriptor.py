@@ -75,13 +75,13 @@ class Mod:
         """
         # Import here to avoid circular dependency
         from .mod_loader import get_mod_info
-        
-        _data = get_mod_info(Path(path))
+        path = Path(path)
+        _data = get_mod_info(path)
         for k, v in _data.items():
             if hasattr(self, k):
                 setattr(self, k, v)
         self.path = Path(self.path) # ensure Path object
-        self.file = Path(path)
+        self.file = path
         if self.path.parts[0] == "mod": # adjust relative path
             self.path = Path(CK3_DOC_DIR)/self.path
             self.save_to_descriptor(path) # save adjusted path back to descriptor

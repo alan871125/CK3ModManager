@@ -71,12 +71,17 @@ class ModManager():
         with open(profile_path, "w", encoding="utf-8") as f:
             json.dump(profile_data, f, ensure_ascii=False, indent=4)
 
-    def load_profile(self, profile_path: str|Path, enabled_only: bool = False):
-        """Load a mod profile from file."""
+    def load_profile(self, profile_path: str|Path, profile_only: bool = False):
+        """
+        Load a mod profile from file.
+        Arguments:
+            profile_path (str|Path): Path to the profile file. Use "<Default>" to load from default dlc_load.json.
+            profile_only (bool): If True, only load mods from the profile without scanning all mods.
+        """
         mod_infos = []
+        if not profile_only:
+            mod_infos = get_all_mod_descriptors()
         if profile_path == "<Default>": # load from dlc_load.json
-            if not enabled_only:
-                mod_infos = get_all_mod_descriptors()
             profile_path = self.DOCS_DIR/Path("dlc_load.json")
         profile_path = Path(profile_path)
         profile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,9 +95,12 @@ class ModManager():
         load_order = profile_data.get("load_order", [])
         if load_order:
             for rel_path, enabled in load_order:
-                mod = load_mod_descriptor(Path(self.DOCS_DIR)/rel_path)
-                mod.enabled = enabled
-                mod_infos.append(mod)
+                try:
+                    mod = load_mod_descriptor(Path(self.DOCS_DIR)/rel_path)
+                    mod.enabled = enabled
+                    mod_infos.append(mod)
+                except Exception as e:
+                    logger.error(f"Failed loading mod descriptor {rel_path}: {e}")
         else:
             mod_infos = get_enabled_mod_descriptors(profile_path)            
         self.mod_list.update(ModList(mod_infos))

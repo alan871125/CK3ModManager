@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Settings:
     max_workers: int = os.cpu_count() or 4
-    enabled_only: bool = False
+    profile_only: bool = False
     ck3_docs_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III")
     ck3_mods_path: str = str(CK3_MODS_DIR)
     error_log_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III/logs/error.log")
@@ -28,6 +28,7 @@ class Settings:
     debug: bool = False
     check_conflict_on_startup: bool = False
     game_language: str = "english"
+    text_editor: str = "notepad++"
     
     def asdict(self) -> dict:
         return asdict(self)
@@ -78,10 +79,10 @@ class SettingsDialog(QDialog):
         # Mod List Settings Group
         mods_group = QGroupBox("Mod List Settings")
         mods_layout = QFormLayout(mods_group)
-        self.enabled_mods_only = QCheckBox()
-        self.enabled_mods_only.setToolTip("If checked, only enabled mods will be loaded.")
-        self.enabled_mods_only.setChecked(self.settings.enabled_only)
-        mods_layout.addRow("Load Only Enabled Mods:", self.enabled_mods_only)
+        self.profile_mods_only = QCheckBox()
+        self.profile_mods_only.setToolTip("If checked, only mods listed in the profile will be loaded.")
+        self.profile_mods_only.setChecked(self.settings.profile_only)
+        mods_layout.addRow("Load Only Enabled Mods:", self.profile_mods_only)
         layout.addWidget(mods_group)
         
         # ========== Paths Settings Group ==========
@@ -201,21 +202,11 @@ class SettingsDialog(QDialog):
             title="Select Launcher Settings File",
             mode="json"
         )
-
-            
-    def get_settings(self):
-        """Return current settings as a dictionary"""
-        return {
-            'auto_load': self.check_conflict_on_startup.isChecked(),
-            'max_workers': self.max_workers_spinbox.value(),
-            'ck3_docs_path': self.ck3_docs_path_edit.text(),
-            'ck3_mods_path': self.mods_path_edit.text(),
-        }
     def save_settings(self):
         """Update settings from the dialog inputs"""
         self.settings.check_conflict_on_startup = self.check_conflict_on_startup.isChecked()
         self.settings.max_workers = self.max_workers_spinbox.value()
-        self.settings.enabled_only = self.enabled_mods_only.isChecked()
+        self.settings.profile_only = self.profile_mods_only.isChecked()
         self.settings.ck3_docs_path = self.ck3_docs_path_edit.text()
         self.settings.ck3_mods_path = self.mods_path_edit.text()
         self.settings.error_log_path = self.error_log_path_edit.text()

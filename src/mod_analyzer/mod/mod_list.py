@@ -121,15 +121,24 @@ class ModList(IndexedOrderedDict, Generic[TypeVar('KeyType')]):
     
     def hide_disabled_mod_descriptor_files(self):
         """Renames the descriptor files of disabled mods to hide them from the game."""
+        count = 0
         for mod in self.disabled:
             if mod.file and mod.file.exists():
-                hidden_file = mod.file.with_suffix(mod.file.suffix + "_disabled")
+                hidden_file = mod.file.with_suffix(".mod_disabled")
                 mod.file.rename(hidden_file)
                 mod.file = hidden_file
-    def unhide_disabled_mod_descriptor_files(self):
+                print(f"Hid mod descriptor file: {hidden_file}")
+                count += 1
+        print(f"Total disabled mod descriptor files hidden: {count}")
+        
+    def unhide_mod_descriptor_files(self):
         """Restores the descriptor files of disabled mods."""
-        for mod in self.disabled:
-            if mod.file and mod.file.exists() and mod.file.suffix.endswith("_disabled"):
-                restored_file = mod.file.with_suffix(mod.file.suffix.replace("_disabled", ""))
+        count = 0
+        for mod in self.values():
+            if mod.file and mod.file.exists() and mod.file.suffix == ".mod_disabled":
+                restored_file = mod.file.with_suffix(".mod")
                 mod.file.rename(restored_file)
                 mod.file = restored_file
+                print(f"Restored mod descriptor file: {restored_file}")
+                count+=1
+        print(f"Total disabled mod descriptor files restored: {count}")
