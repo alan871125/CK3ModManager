@@ -7,31 +7,6 @@ from typing import Optional
 from mod_analyzer.mod.manager import ModManager
 from app.qt_widgets import TableWidgetDragRows
 
-def create_mod_list_tab(self):
-        """Create the Mod List tab"""
-        mod_list_widget = qt.QWidget()
-        mod_list_layout = qt.QVBoxLayout(mod_list_widget)
-        mod_list_layout.setContentsMargins(5, 5, 5, 5)
-        
-        
-        # Mod table
-        self.mod_table = ModTableWidgetItem(self.mod_manager)
-        # Connect double-click on Priority column for editing
-        self.mod_table.cellDoubleClicked.connect(self.on_cell_double_clicked)
-        # Connect row reordered signal
-        self.mod_table.row_reordered.connect(self.on_row_reordered)
-        mod_list_layout.addWidget(self.mod_table)
-        self.mod_tab_widget.addTab(mod_list_widget, "Mod List")
-        # Add search bar
-        search_layout = qt.QHBoxLayout()
-        search_label = qt.QLabel("Search:")
-        self.mod_search_input = qt.QLineEdit()
-        self.mod_search_input.setPlaceholderText("Search mods by name, tags...")
-        self.mod_search_input.textChanged.connect(self.filter_mod_list)
-        search_layout.addWidget(search_label)
-        search_layout.addWidget(self.mod_search_input)
-        mod_list_layout.addLayout(search_layout)
-
 logger = logging.getLogger(__name__)
 class ModTableWidget(qt.QWidget):
     """Layout for Mod Table with drag-and-drop support"""
@@ -72,11 +47,12 @@ class ModTableWidget(qt.QWidget):
 class ModTableWidgetItem(TableWidgetDragRows):
     """Custom QTableWidgetItem to hold a reference to the Mod object."""
     DEFAULT_COL_WIDTHS = [400, 20, 60, 80, 400, 60, 30]  # Default widths for Mod Name, Priority, Conflicts
+    _COLUMNS = ["Mod Name", "","Priority", "Conflicts", "Tags", "Version", "Outdated","Supported Version", "Mod Directory"]
     def __init__(self, mod_manager:ModManager, *args, **kwargs):
         super().__init__(*args, **kwargs)
          # Create custom table widget with drag-drop support
         self.setColumnCount(9)
-        self.setHorizontalHeaderLabels(["Mod Name", "","Priority", "Conflicts", "Tags", "Version", "Outdated","Supported Version", "Mod Directory"])
+        self.setHorizontalHeaderLabels(self._COLUMNS)
         self.setSelectionBehavior(qt.QAbstractItemView.SelectRows)
         # Allow editing only for Priority column
         self.setEditTriggers(qt.QAbstractItemView.NoEditTriggers)
@@ -91,7 +67,13 @@ class ModTableWidgetItem(TableWidgetDragRows):
         self.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.row_reordered.connect(self.on_row_reordered)
         
-
+    def get_item(self,row:int, column_name:str):
+        """Get item by column name"""
+        try:
+            col_index = self._COLUMNS.index(column_name)
+            return self.item(row, col_index)
+        except ValueError:
+            return None
     def set_column_widths(self, widths: list[int]):
         """Set column widths based on provided list."""
         for col, width in enumerate(widths):
@@ -109,8 +91,7 @@ class ModTableWidgetItem(TableWidgetDragRows):
         """Open the mod folder for the selected row (double-click)."""
         try:
             # Get mod from the row
-            name_item = self.item(row, 0)
-            if name_item:
+            if name_item:= self.get_item(row, "Mod Name"):
                 mod_name = name_item.text()
                 # Find mod in mod_list
                 for mod in self.mod_manager.mod_list.values():
@@ -127,14 +108,14 @@ class ModTableWidgetItem(TableWidgetDragRows):
     
     def edit_priority(self, row):
         """Allow editing priority and reorder mods"""
-        priority_item = self.item(row, 1)
+        priority_item = self.get_item(row, "Priority")
         if not priority_item:
             return
         
         old_priority = priority_item.text()
         
         # Get mod name from the first column
-        name_item = self.item(row, 0)
+        name_item = self.get_item(row, "Mod Name")
         mod_name = name_item.text() if name_item else "this mod"
         
         # Create a dialog to get new priority
@@ -206,7 +187,7 @@ class ModTableWidgetItem(TableWidgetDragRows):
         if row_end is None:
             row_end = self.rowCount()
         for row in range(row_start, row_end):
-            priority_item = self.item(row, 1)
+            priority_item = self.get_item(row, "Priority")
             if priority_item:
                 priority_item.setText(str(row))
             self._update_mod_manager_by_row(row)
@@ -216,7 +197,7 @@ class ModTableWidgetItem(TableWidgetDragRows):
         """Update ModManager's enabled mod and load_order for a specific row
         Remember to call mod_manager.mod_list.sort() after updating all rows.
         """
-        name_item = self.item(row, 0)
+        name_item = self.get_item(row, "Mod Name")
         if name_item:
             mod = self.mod_manager.mod_list.get(name_item.text())
             if mod:
@@ -233,7 +214,7 @@ class ModTableWidgetItem(TableWidgetDragRows):
         """Get current load order of mods based on table"""
         load_order = []
         for row in range(self.rowCount()):
-            name_item = self.item(row, 0)
+            name_item = self.get_item(row, "Mod Name")
             if name_item and name_item.checkState() == Qt.Checked:
                 load_order.append(name_item.text())
         return load_order
