@@ -41,8 +41,7 @@ class ModTableWidget(qt.QWidget):
             if search_text in name or search_text in tags:
                 self.mod_table.setRowHidden(row, False)
             else:
-                self.mod_table.setRowHidden(row, True)
-        
+                self.mod_table.setRowHidden(row, True)        
         
 class ModTableWidgetItem(TableWidgetDragRows):
     """Custom QTableWidgetItem to hold a reference to the Mod object."""
@@ -66,6 +65,8 @@ class ModTableWidgetItem(TableWidgetDragRows):
         
         self.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.row_reordered.connect(self.on_row_reordered)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
         
     def get_item(self,row:int, column_name:str):
         """Get item by column name"""
@@ -74,10 +75,12 @@ class ModTableWidgetItem(TableWidgetDragRows):
             return self.item(row, col_index)
         except ValueError:
             return None
+        
     def set_column_widths(self, widths: list[int]):
         """Set column widths based on provided list."""
         for col, width in enumerate(widths):
             self.setColumnWidth(col, width)
+            
     def on_cell_double_clicked(self, row, column):
         """Handle double-click on table cells"""
         # Priority column (index 1) - allow editing
@@ -85,9 +88,44 @@ class ModTableWidgetItem(TableWidgetDragRows):
             self.edit_priority(row)
         else:
             # Other columns - open mod folder
-            self._open_mod_folder(row, column)
-    
-    def _open_mod_folder(self, row, column):
+            self._open_mod_folder(row)
+    def show_context_menu(self, position):
+        """Show context menu on right-click"""
+        menu = qt.QMenu()
+        open_folder_action = menu.addAction("Open Mod Folder")
+        show_in_workshop_action = menu.addAction("Show in Workshop")
+        
+        action = menu.exec_(self.viewport().mapToGlobal(position))
+        
+        selected_row = self.currentRow()
+        
+        if action == open_folder_action:
+            self._open_mod_folder(selected_row)
+        elif action == show_in_workshop_action:
+            self.show_mod_in_workshop(selected_row)
+            
+    def show_mod_in_workshop(self, row):
+        """Open the Steam Workshop page for the selected mod."""
+        try:
+            # Get mod from the row
+            if name_item:= self.get_item(row, "Mod Name"):
+                mod_name = name_item.text()
+                # Find mod in mod_list
+                for mod in self.mod_manager.mod_list.values():
+                    if getattr(mod, "name", "") == mod_name:
+                        remote_file_id = getattr(mod, "remote_file_id", "")
+                        if remote_file_id:
+                            import webbrowser
+                            url = f"https://steamcommunity.com/sharedfiles/filedetails/?id={remote_file_id}"
+                            webbrowser.open(url)
+                            logger.info(f"Opened Workshop page: {url}")
+                        else:
+                            logger.info(f"No Remote File ID for mod: {mod_name}")
+                        break
+        except Exception as e:
+            logger.info(f"Failed to open Workshop page: {e}")
+            
+    def _open_mod_folder(self, row):
         """Open the mod folder for the selected row (double-click)."""
         try:
             # Get mod from the row
