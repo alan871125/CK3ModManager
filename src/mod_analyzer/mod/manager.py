@@ -12,6 +12,7 @@ from . paradox import paradox_parser, DefinitionNode
 # from . import _mod_rust as _native
 # paradox_parser = _native.paradox_parser
 from . import Mod, ModList
+from constants import CK3_DOCS_DIR, MODS_DIR, WORKSHOP_DIR, GAME_DIR
 from . mod_loader import get_mod_info, get_enabled_mod_descriptors, get_all_mod_descriptors, get_all_mod_descriptor_paths, get_playset_mod_descriptors, get_enabled_mod_dirs, load_mod_descriptor
 
 pkg = (__package__ or __name__).split('.')[0]
@@ -21,10 +22,6 @@ class ModManager():
     """Checks for conflicts in mod definitions across multiple mods.
     """
     # Directories: Works only for default directories installed with steam, modify if needed
-    GAME_DIR = r"C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III\game"
-    MODS_DIR = os.path.expandvars(r"%USERPROFILE%\Documents\Paradox Interactive\Crusader Kings III\mod")
-    DOCS_DIR = os.path.expandvars(r"%USERPROFILE%\Documents\Paradox Interactive\Crusader Kings III")
-    WORKSHOP_DIR = r"C:\Program Files (x86)\Steam\steamapps\workshop\content\1158310"
     root_dir: Path
     mod_list: ModList[str]
     _max_def_depth: int = -1
@@ -40,7 +37,7 @@ class ModManager():
         # self._conflict_issues: dict[tuple[str,str], list[DefinitionNode]] = {} # this shouldn't be required anymore
         self.conflict_mods: set[str] = set()
         self.conflict_check_range: Optional[str] = None # "all", "enabled", "disabled", None
-        self._def_extractor = paradox_parser.DefinitionExtractor(self.WORKSHOP_DIR, self.MODS_DIR, self.language)
+        self._def_extractor = paradox_parser.DefinitionExtractor(WORKSHOP_DIR, MODS_DIR, self.language)
     @property
     def def_table(self) -> DefinitionNode:
         """Returns the root definition node of the mod definition tree."""
@@ -59,12 +56,12 @@ class ModManager():
     def save_profile(self, profile_path: str|Path):
         """Save the current mod list as a profile to file."""
         if profile_path == "<Default>": # save to dlc_load.json
-            profile_path = self.DOCS_DIR/Path("dlc_load.json")
+            profile_path = CK3_DOCS_DIR/Path("dlc_load.json")
         profile_path = Path(profile_path)
         profile_path.parent.mkdir(parents=True, exist_ok=True)
         profile_data = {"enabled_mods":[], "disabled_dlcs":[], "load_order":[]}
         for mod in self.mod_list.values():
-            rel_path = mod.file.relative_to(self.DOCS_DIR).as_posix()
+            rel_path = mod.file.relative_to(CK3_DOCS_DIR).as_posix()
             if mod.enabled:
                 profile_data["enabled_mods"].append(rel_path)
             profile_data["load_order"].append((rel_path, mod.enabled))
@@ -82,7 +79,7 @@ class ModManager():
         if not profile_only:
             mod_infos = get_all_mod_descriptors()
         if profile_path == "<Default>": # load from dlc_load.json
-            profile_path = self.DOCS_DIR/Path("dlc_load.json")
+            profile_path = CK3_DOCS_DIR/Path("dlc_load.json")
         profile_path = Path(profile_path)
         profile_path.parent.mkdir(parents=True, exist_ok=True)
         self.mod_list = ModList(mod_infos)
@@ -96,7 +93,7 @@ class ModManager():
         if load_order:
             for rel_path, enabled in load_order:
                 try:
-                    mod = load_mod_descriptor(Path(self.DOCS_DIR)/rel_path)
+                    mod = load_mod_descriptor(Path(CK3_DOCS_DIR)/rel_path)
                     mod.enabled = enabled
                     mod_infos.append(mod)
                 except Exception as e:
@@ -118,9 +115,9 @@ class ModManager():
         lines =[]
         for mod in self.mod_list.values():
             prefix = "+" if mod.enabled else "-"
-            rel_path = mod.path.relative_to(self.MODS_DIR).as_posix()
+            rel_path = mod.path.relative_to(MODS_DIR).as_posix()
             lines.append(f"{prefix}{rel_path}")
-        with open(Path(self.MODS_DIR)/"load_order.txt", "w", encoding="utf-8") as f:
+        with open(Path(MODS_DIR)/"load_order.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
     def load_load_order(self, file_path: str|Path):
         """
@@ -140,7 +137,7 @@ class ModManager():
                     continue
                 prefix = line[0]
                 rel_path = line[1:]
-                mod = load_mod_descriptor(Path(self.MODS_DIR)/rel_path)
+                mod = load_mod_descriptor(Path(MODS_DIR)/rel_path)
                 if mod:
                     mod.enabled = True if prefix == "+" else False
                     mod_infos.append(mod)
@@ -179,10 +176,10 @@ class ModManager():
     def get_rel_path(self, abs_path: str|Path, depth = 1) -> Optional[Path]:
         """Gets the relative path of a file with respect to the mod directories."""
         abs_path = Path(abs_path)
-        if abs_path.is_relative_to(self.MODS_DIR):
-            rel_path = abs_path.relative_to(self.MODS_DIR)
-        elif abs_path.is_relative_to(self.WORKSHOP_DIR):
-            rel_path = abs_path.relative_to(self.WORKSHOP_DIR)
+        if abs_path.is_relative_to(MODS_DIR):
+            rel_path = abs_path.relative_to(MODS_DIR)
+        elif abs_path.is_relative_to(WORKSHOP_DIR):
+            rel_path = abs_path.relative_to(WORKSHOP_DIR)
         else:    
             return None
         return rel_path.relative_to('/'.join(rel_path.parts[:depth]))
@@ -190,12 +187,12 @@ class ModManager():
     def get_file_mod_source(self, abs_path: str|Path) -> Optional[Mod]:
         """Get the mod that contains the given absolute file path."""
         abs_path = Path(abs_path)
-        if abs_path.is_relative_to(self.MODS_DIR):
-            rel_path = abs_path.relative_to(self.MODS_DIR)
-            mod_dir = Path(self.MODS_DIR)/rel_path.parts[0]
-        elif abs_path.is_relative_to(self.WORKSHOP_DIR):
-            rel_path = abs_path.relative_to(self.WORKSHOP_DIR)
-            mod_dir = Path(self.WORKSHOP_DIR)/rel_path.parts[0]
+        if abs_path.is_relative_to(MODS_DIR):
+            rel_path = abs_path.relative_to(MODS_DIR)
+            mod_dir = Path(MODS_DIR)/rel_path.parts[0]
+        elif abs_path.is_relative_to(WORKSHOP_DIR):
+            rel_path = abs_path.relative_to(WORKSHOP_DIR)
+            mod_dir = Path(WORKSHOP_DIR)/rel_path.parts[0]
         else:    
             return None
         return self.mod_list.get_by_dir(mod_dir)
@@ -237,7 +234,7 @@ class ModManager():
         elif mode == "folder":
             mod_infos = get_all_mod_descriptors() # load all mods from mod folder
         elif mode == "default":
-            path = Path(self.DOCS_DIR)/"dlc_load.json"
+            path = Path(CK3_DOCS_DIR)/"dlc_load.json"
             # if enabled_only, load only enabled mods from dlc_load.json
             if not enabled_only: # default load all mods from mod folder, then update with enabled mods
                 mod_infos = get_all_mod_descriptors()

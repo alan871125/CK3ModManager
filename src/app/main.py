@@ -12,17 +12,19 @@ from PyQt5.QtGui import QDropEvent, QCursor, QIcon
 from mod_analyzer.mod.descriptor import Mod
 from mod_analyzer.mod.mod_list import ModList
 from mod_analyzer.mod.manager import ModManager
+from mod_analyzer.mod.paradox import DefinitionNode, NodeType
+from mod_analyzer.mod.mod_loader import update_workshop_mod_descriptor_files
 from mod_analyzer.error import patterns
 from mod_analyzer.error.analyzer import ErrorAnalyzer, ParsedError
 from app.mod_table import ModTableWidget, ModTableWidgetItem
-from app.directory import CK3_MODS_DIR
 from app.conflict_model import ConflictTreeModel
 from app.error_model import ErrorTreeModel
 from app.tree_nodes import ConflictTreeNodeEntry, ErrorTreeNode, ConflictTreeNode, TreeNode
 from app.workers import FileTreeWorker, ErrorAnalysisWorker
 from app.settings import Settings, SettingsDialog
 from app.game import GameLauncher
-from mod_analyzer.mod.paradox import DefinitionNode, NodeType
+from constants import MODS_DIR
+
 logging.basicConfig(format='[%(asctime)s][%(levelname)s] %(message)s', level=logging.INFO)
 # Set up loggers
 logger = logging.getLogger(__name__)
@@ -73,6 +75,8 @@ class CK3ModManagerApp(qt.QMainWindow):
         log_level = logging.DEBUG if self.settings.debug else logging.INFO
         logger.setLevel(log_level)
         self.initUI()
+        # Update workshop mod descriptors on startup        
+        update_workshop_mod_descriptor_files()        
         # Auto-load mods on startup
         self.load_mods()
         if self.settings.check_conflict_on_startup:
@@ -908,7 +912,7 @@ class CK3ModManagerApp(qt.QMainWindow):
                 else:                    
                     path_to_open = self.selected_conflict_node.path
             if path_to_open is not None and path_to_open.parts[0] == "%CK3_MODS_DIR%":
-                path_to_open = CK3_MODS_DIR.joinpath(*path_to_open.parts[1:])
+                path_to_open = MODS_DIR.joinpath(*path_to_open.parts[1:])
             if path_to_open and path_to_open.exists():
                 # open it directly
                 os.startfile(path_to_open)
@@ -997,7 +1001,7 @@ class CK3ModManagerApp(qt.QMainWindow):
                 else:                    
                     file_path = self.selected_conflict_node.path
             if file_path is not None and file_path.parts[0] == "%CK3_MODS_DIR%":
-                file_path = CK3_MODS_DIR.joinpath(*file_path.parts[1:])
+                file_path = MODS_DIR.joinpath(*file_path.parts[1:])
             if not file_path:
                 logger.warning("No file path available")
                 return
@@ -1128,7 +1132,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             profile_dir.mkdir(parents=True, exist_ok=True)
             
             # Copy dlc_load.json from CK3 documents folder to the new profile
-            source_dlc_load = Path(self.mod_manager.DOCS_DIR) / "dlc_load.json"
+            source_dlc_load = Path(self.settings.ck3_docs_path) / "dlc_load.json"
             dest_dlc_load = profile_dir / "dlc_load.json"
             shutil.copy2(source_dlc_load, dest_dlc_load)
             

@@ -6,7 +6,10 @@ about a CK3 mod from its descriptor.mod file.
 from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass, asdict, field
-CK3_DOC_DIR = Path.home()/"Documents"/"Paradox Interactive"/"Crusader Kings III"
+from constants import CK3_DOCS_DIR
+
+import logging
+logger = logging.getLogger((__package__ or __name__).split('.')[0])
 
 @dataclass(order=True) 
 class Mod:
@@ -82,9 +85,10 @@ class Mod:
                 setattr(self, k, v)
         self.path = Path(self.path) # ensure Path object
         self.file = path
-        if self.path.parts[0] == "mod": # adjust relative path
-            self.path = Path(CK3_DOC_DIR)/self.path
+        if self.path.parts and self.path.parts[0] == "mod": # adjust relative path
+            self.path = Path(CK3_DOCS_DIR)/self.path
             self.save_to_descriptor(path) # save adjusted path back to descriptor
+            
     def save_to_descriptor(self, path: str|Path):
         """Save mod info to a descriptor file.
         
@@ -99,7 +103,7 @@ class Mod:
             tags_str = '", "'.join(self.tags)
             lines.append(f'tags={{"{tags_str}"}}')
         if self.supported_version is not None:
-            lines.append(f'supported_version = {self.supported_version}')
+            lines.append(f'supported_version = "{self.supported_version}"')
         if self.remote_file_id:
             lines.append(f'remote_file_id = "{self.remote_file_id}"')
         if self.picture is not None and self.picture.parts:
@@ -123,17 +127,19 @@ class Mod:
         """
         if self.supported_version is None:
             return False
-        for part0, part1 in zip(self.supported_version.strip().split("."), current_version.split(".")):
+        for part0, part1 in zip(self.supported_version.strip().split("."), current_version.split(" ")[0].split(".")):
             try:
+                if part0 == "*" or part1 == "*":
+                    return False
                 num0 = int(part0)
                 num1 = int(part1)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Invalid version format: '{self.version}' or '{current_version}'")
                 return False
-                raise ValueError(f"Invalid version format: '{self.version}' or '{current_version}'")
             if num0 < num1:
                 return True
-            elif num0 > num1:
-                return False
+            # elif num0 > num1:
+            #     return False
         return False  # Versions are equal up to the length of the shorter one
 
     def __hash__(self):

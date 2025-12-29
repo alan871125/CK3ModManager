@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .descriptor import Mod
-CK3_DOC_DIR = Path.home()/"Documents"/"Paradox Interactive"/"Crusader Kings III"
+from constants import CK3_DOCS_DIR, WORKSHOP_DIR, MODS_DIR
 import logging
 pkg = (__package__ or __name__).split('.')[0]
 logger = logging.getLogger(pkg)
@@ -39,9 +39,23 @@ def parse_paradox_mod_descriptor(text:str)-> dict[str, str|List[str]]:
         result['tags'] = re.findall(r'"([^"]+)"', m.group(1))
     return result
 
+def update_workshop_mod_descriptor_files():
+    """Search for descriptor.mod files in the Steam Workshop folder and add them to the mods folder."""
+    if not WORKSHOP_DIR.exists():
+        logger.warning(f"Workshop directory does not exist: {WORKSHOP_DIR}")
+        return
+    for f in WORKSHOP_DIR.glob("**/descriptor.mod"):
+        try:
+            mod_desc:Mod = load_mod_descriptor(f)
+            mod_desc.path = f.parent
+            mod_desc.save_to_descriptor(MODS_DIR/f"ugc_{mod_desc.remote_file_id}.mod")            
+        except:
+            logger.error(f"Failed loading workshop mod descriptor: {f}")
+            continue
+
 def load_mod_descriptor(path: Path | str) -> Mod:
     """Load a Mod descriptor from the given file path."""
-    candidate_paths = [path, CK3_DOC_DIR/"mod"/path, CK3_DOC_DIR/path]
+    candidate_paths = [path, MODS_DIR/path, CK3_DOCS_DIR/path]
     for p in candidate_paths:
         if Path(p).exists():
             path = p
@@ -81,9 +95,9 @@ def is_mod_descriptor_file(file_path: Path|str) -> bool:
         return True
     return False
 
-def get_all_mod_descriptor_paths(pandora_dir: Optional[Path]= None) -> List[Path]:
-    pandora_dir = pandora_dir or CK3_DOC_DIR
-    mod_dir = pandora_dir/"mod"
+def get_all_mod_descriptor_paths(paradox_dir: Optional[Path]= None) -> List[Path]:
+    paradox_dir = paradox_dir or CK3_DOCS_DIR
+    mod_dir = paradox_dir/"mod"
     paths = []
     for f in os.listdir(mod_dir):
         if is_mod_descriptor_file(f):
@@ -91,7 +105,7 @@ def get_all_mod_descriptor_paths(pandora_dir: Optional[Path]= None) -> List[Path
     return paths
 
 def get_all_mod_descriptors(mod_dir: Optional[Path]= None) -> List[Mod]:
-    mod_dir = mod_dir or CK3_DOC_DIR/"mod"
+    mod_dir = mod_dir or CK3_DOCS_DIR/"mod"
     descriptors = []
     for f in os.listdir(mod_dir):
         try:
@@ -103,24 +117,24 @@ def get_all_mod_descriptors(mod_dir: Optional[Path]= None) -> List[Mod]:
     return descriptors
 
 # ------- default dlc_load.json based functions -------
-def get_enabled_mod_dirs(mod_list_path: Optional[Path]= None, pandora_dir: Optional[Path]= None) -> List[Path]:
-    pandora_dir = pandora_dir or CK3_DOC_DIR
-    mod_list_path = mod_list_path or pandora_dir/"dlc_load.json"
+def get_enabled_mod_dirs(mod_list_path: Optional[Path]= None, paradox_dir: Optional[Path]= None) -> List[Path]:
+    paradox_dir = paradox_dir or CK3_DOCS_DIR
+    mod_list_path = mod_list_path or paradox_dir/"dlc_load.json"
     with open(mod_list_path, "r", encoding="utf-8") as f:
         dlc_data = json.load(f)
     desc_rel_paths = dlc_data.get("enabled_mods", [])
-    mod_dirs = [Path(pandora_dir/p) for p in desc_rel_paths]
+    mod_dirs = [Path(paradox_dir/p) for p in desc_rel_paths]
     return mod_dirs
-def get_enabled_mod_descriptors(mod_list_path: Optional[str|Path]= None, pandora_dir: Optional[Path]= None) -> List[Mod]:
-    pandora_dir = pandora_dir or CK3_DOC_DIR
-    mod_list_path = mod_list_path or pandora_dir/"dlc_load.json"
+def get_enabled_mod_descriptors(mod_list_path: Optional[str|Path]= None, paradox_dir: Optional[Path]= None) -> List[Mod]:
+    paradox_dir = paradox_dir or CK3_DOCS_DIR
+    mod_list_path = mod_list_path or paradox_dir/"dlc_load.json"
     with open(mod_list_path, "r", encoding="utf-8") as f:
         dlc_data = json.load(f)
     desc_rel_paths = dlc_data.get("enabled_mods", []) # example: ["mod/ugc_0000000000.mod", "mod/awesome_mod.mod"] ]
     mod_descriptors = []
     for i, p in enumerate(desc_rel_paths):
         try:
-            desc = load_mod_descriptor(pandora_dir/p)
+            desc = load_mod_descriptor(paradox_dir/p)
             desc.enabled = True
             desc.load_order = i
             mod_descriptors.append(desc)

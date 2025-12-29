@@ -133,7 +133,7 @@ class ModTableWidgetItem(TableWidgetDragRows):
                 mod_name = name_item.text()
                 # Find mod in mod_list
                 for mod in self.mod_manager.mod_list.values():
-                    if getattr(mod, "name", "") == mod_name:
+                    if mod.dup_name == mod_name:
                         path = str(getattr(mod, "path", ""))
                         if path and os.path.exists(path):
                             os.startfile(path)

@@ -618,7 +618,7 @@ fn _collect_mod_files(mod_data: ModData, language:Option<String>) -> std::collec
                     Some("yml") => { // localization only take yml files                    
                         // if language is None, collect all yml files
                         if let Some(lang) = &language {
-                            let suffix = format!("l_{lang}.yml");
+                            let suffix = format!("{lang}.yml");
                             // Check if the file NAME (not path) ends with the suffix
                             let file_name = path.file_name().unwrap().to_str().unwrap_or("");                            
                             if file_name.ends_with(&suffix) {

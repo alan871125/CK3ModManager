@@ -15,8 +15,8 @@ from ..mod.mod_loader import load_mod_descriptor
 from ..mod.mod_list import ModList
 from . import patterns
 from .source import ErrorSource, ScriptErrorSource
+from constants import CK3_DOCS_DIR
 
-CK3_DOC_DIR = Path.home()/"Documents"/"Paradox Interactive"/"Crusader Kings III"
 pkg = (__package__ or __name__).split('.')[0]
 logger = logging.getLogger(pkg)
 
@@ -143,7 +143,7 @@ class ErrorParser():
     
     def _find_log_file(self, logs_dir: Optional[str|Path]=None) -> Path | None:
         if logs_dir is None:
-            candidates = [CK3_DOC_DIR/"logs/error.log"]
+            candidates = [CK3_DOCS_DIR/"logs/error.log"]
         else:
             logs_dir = Path(logs_dir)
             candidates = [logs_dir, logs_dir/"error.log", logs_dir/"logs/error.log"]

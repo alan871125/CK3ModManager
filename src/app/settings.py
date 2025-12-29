@@ -9,25 +9,50 @@ from PyQt5.QtWidgets import (
     QCheckBox, QSpinBox, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox
 )
 
-from app import game
-
-
-from .directory import CK3_MODS_DIR
+from constants import MODS_DIR, CK3_DOCS_DIR, WORKSHOP_DIR, CK3_INSTALL_DIR, CK3_GAME_SETTINGS_DIR
 
 logger = logging.getLogger(__name__)
+
+def get_game_language() -> str:
+    """Read the game language from the pdx_settings.txt file."""
+    # "System"={
+    #      ...
+    #      "language"={
+    #          version=0
+    #          value="l_english"
+    #      }    
+    # }
+    settings_path = CK3_GAME_SETTINGS_DIR
+    language = "l_english"  # default language
+    if not settings_path.exists():
+        logger.warning(f"Game settings file does not exist: {settings_path}")
+        return language
+    try:
+        with open(settings_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        import re
+        m = re.search(r'\"language\"=\{[\n\s]*version=\w+\s*value=\"([^\s]+)\"\s+\}', content, re.S)
+        if m:
+            language = m.group(1)
+        else:
+            logger.warning("Language setting not found in pdx_settings.txt")
+    except Exception as e:
+        logger.error(f"Failed to read game language from {settings_path}: {e}")
+    finally:
+        return language
 
 @dataclass
 class Settings:
     max_workers: int = os.cpu_count() or 4
     profile_only: bool = False
-    ck3_docs_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III")
-    ck3_mods_path: str = str(CK3_MODS_DIR)
-    error_log_path: str = str(Path.home()/"Documents/Paradox Interactive/Crusader Kings III/logs/error.log")
-    launcher_settings_path: str = r"C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III\launcher\launcher-settings.json"
+    ck3_docs_path: str = CK3_DOCS_DIR.as_posix()
+    ck3_mods_path: str = MODS_DIR.as_posix()
+    error_log_path: str = (CK3_DOCS_DIR/"logs"/"error.log").as_posix()
+    launcher_settings_path: str = (CK3_INSTALL_DIR/"launcher"/"launcher-settings.json").as_posix()
     exe_args: str = "-gdpr-compliant"# default exe args from launcher-settings.json
     debug: bool = False
     check_conflict_on_startup: bool = False
-    game_language: str = "english"
+    game_language: str = get_game_language()
     text_editor: str = "notepad++"
     
     def asdict(self) -> dict:
