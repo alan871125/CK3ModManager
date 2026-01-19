@@ -34,7 +34,10 @@ fn get_rel_dir(file: &PathBuf, workshop_dir: &PathBuf, mods_dir: &PathBuf) -> Pa
 }
 
 static CHECK_LOC_CONFLICTS: bool = false;
-
+// This should be kept true for now,
+// since even showing conflicts using the paradox's conflict logs rely on the <def> node sources,
+// which requires the conflict checking for now.
+static CHECK_SCRIPT_CONFLICTS: bool = true; 
 #[pyclass]
 struct DefinitionExtractor{
     #[pyo3(get, set)]
@@ -48,6 +51,8 @@ struct DefinitionExtractor{
     arena: Arc<RwLock<Arena>>,
     #[pyo3(get, set)]
     check_loc_conflicts: bool,
+    #[pyo3(get, set)]
+    check_script_conflicts: bool,
     // flat mappings for easy access, collisions are likely occurred, used for error tracking when only the identifier name is given
     // see mod_analyzer.error.analyzer for usage
 }
@@ -67,6 +72,7 @@ impl DefinitionExtractor {
             conflicts: HashSet::new(),
             arena: Arc::new(RwLock::new(arena)),
             check_loc_conflicts: CHECK_LOC_CONFLICTS,
+            check_script_conflicts: CHECK_SCRIPT_CONFLICTS,
         }
     }
     #[getter]
@@ -76,13 +82,7 @@ impl DefinitionExtractor {
             root:0
         }
     }
-    // #[getter]
-    // fn get_conflict_identifiers(&self) -> Vec<DefinitionNode> {
-    //     self.conflicts.iter().map(|id| DefinitionNode {
-    //         arena: self.arena.clone(),
-    //         id: *id,
-    //     }).collect()
-    // }
+    
     #[getter]
     fn get_root(&self) -> DefinitionNode {
         DefinitionNode {
@@ -209,6 +209,8 @@ impl DefinitionExtractor {
                         if mod_data.unwrap().enabled == false {
                             // def_node.update(node);
                             // don't add the disabled mod's definitions to <def>
+                        }else if self.check_script_conflicts == false {
+                            def_node.update(node);
                         }else{                            
                             let conflicts = def_node.update_with_conflict_check(&node);
                             if !conflicts.is_empty() {
@@ -223,11 +225,24 @@ impl DefinitionExtractor {
                         arena: self.arena.clone(),
                         id: 0,
                     };
-                    let node = DefinitionNode {
-                        arena: self.arena.clone(),
-                        id: txt_root_id,
-                    };
-                    root.set_by_dir(rel_dir, node);
+                    // If a file node already exists at this path (same rel_dir across mods),
+                    // merge children into the existing file node so identifiers are not orphaned
+                    // (otherwise `identifier.parent.parent` can become None).
+                    if let Some(mut existing_file_node) = root.get_by_dir(rel_dir.clone(), None) {
+                        self.arena.write().unwrap().set_source(existing_file_node.id, *mod_id);
+                        existing_file_node.update(DefinitionNode {
+                            arena: self.arena.clone(),
+                            id: txt_root_id,
+                        });
+                    } else {
+                        root.set_by_dir(
+                            rel_dir,
+                            DefinitionNode {
+                                arena: self.arena.clone(),
+                                id: txt_root_id,
+                            },
+                        );
+                    }
                 } // All PyNode refs dropped here
                 
             }
@@ -261,12 +276,16 @@ impl DefinitionExtractor {
                             id: yml_root_id,
                         };
                         if self.check_loc_conflicts == false {
+                            // update the <loc> node directly
                             loc_node.update(node);
                         }
-                        // let conflicts = loc_node.update_with_conflict_check(&node);
-                        // if !conflicts.is_empty() {
-                        //     self.conflicts.extend(conflicts);
-                        // }
+                        else{
+                            // update the <loc> node with conflict checking (off by default)
+                            let conflicts = loc_node.update_with_conflict_check(&node);
+                            if !conflicts.is_empty() {
+                                self.conflicts.extend(conflicts);
+                            }
+                        }
                     }
                 }
                 
@@ -276,12 +295,24 @@ impl DefinitionExtractor {
                         arena: self.arena.clone(),
                         id: 0,
                     };
-                    let node = DefinitionNode {
-                        arena: self.arena.clone(),
-                        id: yml_root_id,
-                    };
-                    root.set_by_dir(rel_dir, node);
-                } // All PyNode refs dropped here
+                    // If a file node already exists at this path (same rel_dir across mods),
+                    // merge children into the existing file node so identifiers are not orphaned.
+                    if let Some(mut existing_file_node) = root.get_by_dir(rel_dir.clone(), None) {
+                        self.arena.write().unwrap().set_source(existing_file_node.id, *mod_id);
+                        existing_file_node.update(DefinitionNode {
+                            arena: self.arena.clone(),
+                            id: yml_root_id,
+                        });
+                    } else {
+                        root.set_by_dir(
+                            rel_dir,
+                            DefinitionNode {
+                                arena: self.arena.clone(),
+                                id: yml_root_id,
+                            },
+                        );
+                    }
+                } // root dropped here
             }
         }
         // process other files
@@ -291,18 +322,26 @@ impl DefinitionExtractor {
             for (mod_id, file) in mod_node_ids.iter().zip(other_files){
                 let file_name = get_file_name(&file);
                 let rel_dir = self.get_rel_dir(file.clone());
-                let file_node_id = self.get_mut_arena().new_node(
-                    file_name, rel_dir.clone(), None, 
-                );
-                // Set by dir in separate scope to drop PyNode refs before next iteration
+                // Set by dir in separate scope to drop PyNode refs before next iteration.
+                // If a node already exists at this path, just add this mod as a source.
                 {
                     let mut root = DefinitionNode {
                         arena: self.arena.clone(),
                         id: 0,
                     };
-                    root.set_by_dir(rel_dir, DefinitionNode { arena: self.arena.clone(), id: file_node_id });
+                    if let Some(existing_file_node) = root.get_by_dir(rel_dir.clone(), None) {
+                        self.arena.write().unwrap().set_source(existing_file_node.id, *mod_id);
+                    } else {
+                        let file_node_id = self.get_mut_arena().new_node(
+                            file_name, rel_dir.clone(), None,
+                        );
+                        root.set_by_dir(
+                            rel_dir,
+                            DefinitionNode { arena: self.arena.clone(), id: file_node_id },
+                        );
+                        self.arena.write().unwrap().set_source(file_node_id, *mod_id);
+                    }
                 } // root dropped here
-                self.arena.write().unwrap().set_source(file_node_id, *mod_id);
             }
         }
         
@@ -680,7 +719,7 @@ fn extract_loc_definitions(loc_txt: &str) -> PyResult<DefinitionNode> {
     
     _extract_loc_definitions(loc_txt, &mut arena);
     drop(arena);
-    let root_node = DefinitionNode {
+    let root_node: DefinitionNode = DefinitionNode {
         arena: tree.arena.clone(),
         id: 0,
     };

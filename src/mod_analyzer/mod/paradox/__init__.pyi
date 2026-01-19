@@ -6,5 +6,5 @@ from .definition_tree import IdentifierDefNode as IdentifierDefNode
 from .definition_tree import ModNode as ModNode
 from .definition_tree import ValueDefNode as ValueDefNode
 from .definition_tree import ParadoxModDefinitionTree as ParadoxModDefinitionTree
-
+from .iod import IndexedOrderedDict as IndexedOrderedDict
 from . import paradox_parser as paradox_parser

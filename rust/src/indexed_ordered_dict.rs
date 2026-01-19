@@ -126,7 +126,7 @@ impl Hash for KeyWrapper {
     }
 }
 
-#[pyclass(module = "mod_analyzer.mod.paradox")]
+#[pyclass(module = "mod_analyzer.mod.paradox", subclass)]
 pub struct IndexedOrderedDict {
     pub map: IndexedOrderedMap<KeyWrapper, Py<PyAny>, RandomState>,
 }
@@ -142,9 +142,18 @@ impl Default for IndexedOrderedDict {
 #[pymethods]
 impl IndexedOrderedDict {
     #[new]
+    #[pyo3(signature = (*_args, **_kwargs))]
+    fn __new__(
+        _args: &Bound<'_, PyTuple>,
+        _kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        Ok(IndexedOrderedDict {
+            map: IndexedOrderedMap::<KeyWrapper, Py<PyAny>, RandomState>::new(),
+        })
+    }
     #[pyo3(signature = (*args, **kwargs))]
-    fn new(_py: Python<'_>, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        let mut map = IndexedOrderedMap::<KeyWrapper, Py<PyAny>, RandomState>::new();
+    fn __init__(&mut self,_py: Python<'_>, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+        let map = &mut self.map;
         
         if args.len() > 1 {
             return Err(PyTypeError::new_err(format!("IndexedOrderedDict expected at most 1 arguments, got {}", args.len())));
@@ -180,7 +189,7 @@ impl IndexedOrderedDict {
                 map.map.insert(KeyWrapper(k.unbind()), v.unbind());
             }
         }
-        Ok(IndexedOrderedDict { map })
+        Ok(())
     }
 
     fn __len__(&self) -> usize {
