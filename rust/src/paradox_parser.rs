@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::collections::{HashMap,HashSet};
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
-use log::info;
+use log::{info, debug};
 use regex::Regex;
 use rayon::prelude::*;
 use tree_sitter_paradox;
@@ -164,6 +164,7 @@ impl DefinitionExtractor {
     }
     // #[pyfunction(signature = (desc_files, max_depth=-1))]
     fn extract_definitions(&mut self, py: Python<'_>, max_depth: i32) -> PyResult<DefinitionNode> {
+        // will be returned as the mod_manager's definition tree
         // desc_files: list of (enabled: bool, PathBuf)
 
         // get files to process
@@ -172,20 +173,19 @@ impl DefinitionExtractor {
         let mod_files = self.collect_mod_files_multithread(py);
         let file_num: usize = mod_files.values().map(|v| v.0.len()).sum();
         info!("Collected {} mod files in {:?}.", file_num, now.elapsed());
-        // will be returned as the mod_manager's definition tree
-        // let mut root = BaseNode::new_node("<root>".to_string(), PathBuf::from("./"));
-        // let mut root = root.clone();
+
         // process txt files
-        // let mut conflict_identifiers: Vec<PathBuf> = Vec::new();
-        
         if let Some((mod_node_ids, txt_files)) = mod_files.get("txt"){
             let now = time::Instant::now();
             let txt_definitions = self._extract_definitions_multiprocess(py, txt_files, max_depth);
-            info!("Extracted {} TXT definitions in {:?}.", txt_definitions.len(), now.elapsed());
+            debug!("Extracted {} TXT definitions in {:?}.", txt_definitions.len(), now.elapsed());
             for (mod_id,arena) in mod_node_ids.iter().zip(txt_definitions) {
-                let txt_root = self.arena.read().unwrap().len() as usize;
-                self.get_mut_arena().extend(&arena);
-                let txt_root_id = txt_root as u32;
+                let txt_root_id = {
+                    let mut arena_lock = self.arena.write().unwrap();
+                    let txt_root = arena_lock.len() as u32;
+                    arena_lock.extend(&arena);
+                    txt_root
+                };
                 self.arena.write().unwrap().set_source(txt_root_id, *mod_id);
                 
                 // Get data we need without holding PyNode references
@@ -205,8 +205,9 @@ impl DefinitionExtractor {
                             arena: self.arena.clone(),
                             id: txt_root_id,
                         };
-                        let mod_data = self.arena.read().unwrap().mod_data.get(mod_id).cloned();
-                        if mod_data.unwrap().enabled == false {
+                        let mod_enabled = self.arena.read().unwrap().mod_data.get(mod_id)
+                            .map(|m| m.enabled).unwrap_or(false);
+                        if !mod_enabled {
                             // def_node.update(node);
                             // don't add the disabled mod's definitions to <def>
                         }else if self.check_script_conflicts == false {
@@ -246,17 +247,21 @@ impl DefinitionExtractor {
                 } // All PyNode refs dropped here
                 
             }
+            info!("Processed TXT definitions in {:?}.", now.elapsed());
         }
         // process yml files
             
         if let Some((mod_node_ids,yml_files)) = mod_files.get("yml") {
             let now = time::Instant::now();
             let yml_definitions = self._extract_definitions_multiprocess(py, yml_files, max_depth);
-            info!("Extracted {} yml definitions in {:?}.", yml_definitions.len(), now.elapsed());
+            debug!("Extracted {} yml definitions in {:?}.", yml_definitions.len(), now.elapsed());
             for (mod_id,arena) in mod_node_ids.iter().zip(yml_definitions) {
-                let yml_root = self.arena.read().unwrap().len() as usize;
-                self.get_mut_arena().extend(&arena);
-                let yml_root_id = yml_root as u32;
+                let yml_root_id = {
+                    let mut arena_lock = self.arena.write().unwrap();
+                    let yml_root = arena_lock.len() as u32;
+                    arena_lock.extend(&arena);
+                    yml_root
+                };
                 self.arena.write().unwrap().set_source(yml_root_id, *mod_id);
                 
                 // Get data we need without holding PyNode references
@@ -314,11 +319,13 @@ impl DefinitionExtractor {
                     }
                 } // root dropped here
             }
+            info!("Processed YML definitions in {:?}.", now.elapsed());
         }
         // process other files
         if let Some((mod_node_ids,other_files)) = mod_files.get("other") { 
             // don't extract definitions, just build the file tree
             // TODO: process gui files
+            let now = time::Instant::now();
             for (mod_id, file) in mod_node_ids.iter().zip(other_files){
                 let file_name = get_file_name(&file);
                 let rel_dir = self.get_rel_dir(file.clone());
@@ -343,6 +350,7 @@ impl DefinitionExtractor {
                     }
                 } // root dropped here
             }
+            info!("Processed other files in {:?}.", now.elapsed());
         }
         
         // Create final root to return
@@ -469,10 +477,20 @@ impl DefinitionExtractor {
         py.detach(|| {
             files
                 .into_par_iter()
-                .map(|file_path| extract_definitions_worker(file_path, &workshop_dir, &mods_dir, max_depth))
+                .map_init(
+                    || {
+                        let mut parser = tree_sitter::Parser::new();
+                        let language = tree_sitter_paradox::LANGUAGE;
+                        parser
+                            .set_language(&language.into())
+                            .expect("Error loading Paradox parser");
+                        parser
+                    },
+                    |parser, file_path| extract_definitions_worker(file_path, &workshop_dir, &mods_dir, max_depth, Some(parser))
+                )
                 .collect()
         })
-    }
+    }    
 }
 
 
@@ -486,14 +504,20 @@ fn extract_array_vals(node: tree_sitter::Node, source_bytes: &[u8]) -> Vec<Strin
     values
 }
 
-fn parse_paradox_script(source_code: &str) -> Option<tree_sitter::Tree> {
-    let mut parser = tree_sitter::Parser::new();
-    let language = tree_sitter_paradox::LANGUAGE;
-    parser
-        .set_language(&language.into())
-        .expect("Error loading Paradox parser");
-    let tree = parser.parse(source_code, None).unwrap();
-    // assert!(!tree.root_node().has_error());
+fn parse_paradox_script(source_code: &str, parser: Option<&mut tree_sitter::Parser>) -> Option<tree_sitter::Tree> {
+    let mut new_parser;
+    let parser_ref = if let Some(p) = parser {
+        // enable reuse of the parser
+        p
+    } else {
+        new_parser = tree_sitter::Parser::new();
+        let language = tree_sitter_paradox::LANGUAGE;
+        new_parser
+            .set_language(&language.into())
+            .expect("Error loading Paradox parser");
+        &mut new_parser
+    };
+    let tree = parser_ref.parse(source_code, None).unwrap();
     Some(tree)
 }
 fn _extract_loc_definitions(loc_txt: &str, arena: &mut Arena){
@@ -514,23 +538,6 @@ fn _extract_loc_definitions(loc_txt: &str, arena: &mut Arena){
             arena.set_child(0, key, value_node, true);
         }
     }
-
-
-    // for m in pattern.captures_iter(loc_txt) {
-    //     let key = m.name("key").unwrap().as_str().to_string();
-    //     let value = m.name("value").unwrap().as_str().to_string();
-    //     let root_rel_dir = arena.get(0).get_rel_dir();
-    //     let value_node = arena.new_node(
-    //         key.clone(), root_rel_dir, Some(value)
-    //     );
-
-    //     let start_byte = m.get(0).unwrap().start();
-    //     let line_number = loc_txt.as_bytes()[..start_byte].iter().filter(|&&c| c == b'\n').count();
-
-    //     arena.set_node_start_point(value_node, line_number, 0);
-    //     // root.children.insert(key, Box::new(value_node));
-    //     arena.set_child(0, key, value_node, true);
-    // }
 }
 fn _extract_script_definitions(arena: &mut Arena, ts_node: tree_sitter::Node, root_node:NodeId, source_code: &str, max_depth: i32, depth: i32) {
     // max_depth <= 0 means "no limit" (matches Python-side usage).
@@ -690,7 +697,7 @@ fn _collect_mod_files(mod_data: ModData, language:Option<String>) -> std::collec
 
 #[pyfunction(signature = (source_code, max_depth=-1))]
 fn extract_script_definitions(source_code: &str, max_depth: i32) -> PyResult<DefinitionNode> {
-    let ts_tree = parse_paradox_script(source_code).expect("Failed to parse source code");
+    let ts_tree = parse_paradox_script(source_code, None).expect("Failed to parse source code");
     let mut tree = ParadoxModDefinitionTree {
         arena: Arc::new(RwLock::new(Arena::new())),
         root: 0,
@@ -725,47 +732,13 @@ fn extract_loc_definitions(loc_txt: &str) -> PyResult<DefinitionNode> {
     };
     Ok(root_node)
 }
-// #[pyfunction]
-// fn collect_mod_files(mod_dir: PathBuf, language:Option<String>) -> PyResult<std::collections::HashMap<String, Vec<PathBuf>>> {
-//     let file_map = _collect_mod_files(mod_dir, language);
-//     Ok(file_map)
-// }
-// #[pyfunction]
-// fn batch_collect_mod_files(mod_dirs: Vec<PathBuf>, language: Option<String>) -> PyResult<std::collections::HashMap<String, Vec<PathBuf>>> {
-//     let mut results:HashMap<String, Vec<PathBuf>> = HashMap::new();
-//     for mod_dir in mod_dirs {
-//         let file_map = _collect_mod_files(mod_dir, language.clone());
-//         for (key, files) in file_map {
-//             results.entry(key).or_default().extend(files);
-//         }
-//     }
-//     Ok(results)
-// }
-// #[pyfunction]
-// fn collect_mod_files_multithread(py: Python<'_>, mod_dirs: Vec<PathBuf>, language: Option<String>)
-//     -> PyResult<HashMap<String, Vec<PathBuf>>>
-// {
-//     // Release the GIL while Rust is working
-//     let results = py.detach(|| {
-//         mod_dirs
-//             .par_iter() // ← PARALLEL
-//             .map(|mod_dir| _collect_mod_files(mod_dir.clone(), language.clone()))
-//             .reduce(HashMap::new, |mut acc, map| {
-//                 for (key, files) in map {
-//                     acc.entry(key).or_default().extend(files);
-//                 }
-//                 acc
-//             })
-//     });
-//     Ok(results)
-// }
-
 
 fn extract_definitions_worker(
     file: &PathBuf,
     workshop_dir: &PathBuf,
     mods_dir: &PathBuf,
     max_depth: i32,
+    mut parser: Option<&mut tree_sitter::Parser>,
 ) -> Arena {
     let file_type = file.extension().and_then(|s| s.to_str());
     let source_code = std::fs::read_to_string(file).unwrap_or_default();
@@ -777,7 +750,7 @@ fn extract_definitions_worker(
     arena.new_node(file_name, rel_dir, None); // the root node
     match file_type {
         Some("txt") => {
-            if let Some(tree) = parse_paradox_script(&source_code) {
+            if let Some(tree) = parse_paradox_script(&source_code, parser) {
                 _extract_script_definitions(&mut arena, tree.root_node(), 0, &source_code, max_depth, 0);
             }
             arena

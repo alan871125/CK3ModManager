@@ -6,7 +6,7 @@ use pyo3::exceptions::PyKeyError;
 use indexmap::{IndexMap, IndexSet};
 use core::hash;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use log::warn;
 
@@ -33,8 +33,8 @@ pub struct BaseNode {
     value: Option<String>,
     // conflict: bool,
     sources: Arc<RwLock<IndexSet<NodeId>>>,    
-    name: Arc<RwLock<String>>,
-    rel_dir: Arc<RwLock<PathBuf>>,
+    name: String,
+    rel_dir: PathBuf,
     start_point: Option<(usize,usize)>,
 }
 impl BaseNode {
@@ -43,10 +43,10 @@ impl BaseNode {
     }
     
     pub fn get_name(&self) -> String {
-        self.name.read().unwrap().clone()
+        self.name.clone()
     }
     pub fn get_rel_dir(&self) -> PathBuf {
-        self.rel_dir.read().unwrap().clone()
+        self.rel_dir.clone()
     }
     pub fn has_conflict(&self)-> bool {
         self.sources.read().unwrap().len() > 1
@@ -76,11 +76,11 @@ impl Arena{
     }
     pub fn new_node(&mut self, name:String, rel_dir:PathBuf, value:Option<String>)-> NodeId {
         let node_id = self.nodes.len() as NodeId;
-        let node_type = get_node_type(name.clone(), rel_dir.clone(), &value, None);
+        let node_type = get_node_type(&name, &rel_dir, &value, None);
         let node = BaseNode {
             id: node_id,
-            name: Arc::new(RwLock::new(name.clone())),
-            rel_dir: Arc::new(RwLock::new(rel_dir)),
+            name: name.clone(),
+            rel_dir: rel_dir,
             node_type,
             value,
             parent: None,
@@ -100,8 +100,8 @@ impl Arena{
         let node_id = self.nodes.len() as NodeId;
         let node = BaseNode {
             id: node_id,
-            name: Arc::new(RwLock::new(name)),
-            rel_dir: Arc::new(RwLock::new(rel_dir)),
+            name: name,
+            rel_dir: rel_dir,
             node_type,
             value,
             parent: None,
@@ -116,8 +116,8 @@ impl Arena{
         let node_id = self.nodes.len() as NodeId;
         let node = BaseNode {
             id: node_id,
-            name: Arc::new(RwLock::new(draft.name)),
-            rel_dir: Arc::new(RwLock::new(draft.rel_dir)),
+            name: draft.name,
+            rel_dir: draft.rel_dir,
             node_type: draft.node_type,
             value: draft.value,
             parent: None,
@@ -171,8 +171,8 @@ impl Arena{
             parent_node.node_type>=value_node.node_type, 
             "Parent node type({}) must be >= child node type({})\nParent: {:?}\nChild: {:?}", 
             parent_node.node_type.as_str(), value_node.node_type.as_str(), 
-            parent_node.get_rel_dir().join(parent_node.get_name()), 
-            value_node.get_rel_dir().join(value_node.get_name())
+            &parent_node.rel_dir.join(&parent_node.name), 
+            &value_node.rel_dir.join(&value_node.name)
         );
         
         let should_set_source = set_source 
@@ -198,6 +198,10 @@ impl Arena{
     }
     pub fn extend(&mut self, other: &Arena){
         let base_len = self.nodes.len() as NodeId;
+        let other_len = other.nodes.len();
+        // Pre-allocate to avoid repeated reallocations
+        self.nodes.reserve(other_len);
+        
         for _node in &other.nodes {
             let mut node = _node.clone();
             node.id += base_len;
@@ -207,15 +211,15 @@ impl Arena{
             for (_, child_id) in node.children.iter_mut() {
                 *child_id += base_len;
             }
+            // Offset source IDs - using direct write lock (read check adds overhead)
             {
-                let old_sources = node.sources.read().unwrap().clone();
-                let mut new_sources = IndexSet::new();
-                for source_id in old_sources.iter() {
-                    new_sources.insert(*source_id + base_len);
+                let mut sources = node.sources.write().unwrap();
+                if !sources.is_empty() {
+                    let old_sources: IndexSet<NodeId> = sources.iter().map(|&id| id + base_len).collect();
+                    *sources = old_sources;
                 }
-                node.sources = Arc::new(RwLock::new(new_sources));
             }
-            self.library.entry(node.get_name()).or_default().push(node.id);
+            self.library.entry(node.name.to_string()).or_insert_with(Vec::new).push(node.id);
             self.nodes.push(node);
         }
     }
@@ -280,7 +284,7 @@ impl NodeType {
         }
     }
 }
-fn get_node_type(name:String, rel_dir:PathBuf, value: &Option<String>, node_type: Option<String>) -> NodeType{
+fn get_node_type(name: &str, rel_dir: &PathBuf, value: &Option<String>, node_type: Option<String>) -> NodeType{
     if value.is_some(){ // node with value is always ValueNode
         return NodeType::Value
     }
@@ -308,7 +312,7 @@ fn get_node_type(name:String, rel_dir:PathBuf, value: &Option<String>, node_type
     // If the name has a well-known file extension, treat it as a File node.
     // (Identifiers in CK3 frequently contain dots, e.g. capital_county.culture, so we must not
     // classify all dotted names as File.)
-    if let Some(ext) = PathBuf::from(&name).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = Path::new(name).extension().and_then(|e| e.to_str()) {
         let ext = ext.to_ascii_lowercase();
         if matches!(ext.as_str(), "txt" | "yml" | "yaml" | "gui" | "csv" | "dds" | "json" | "mod") {
             return NodeType::File;
@@ -317,7 +321,7 @@ fn get_node_type(name:String, rel_dir:PathBuf, value: &Option<String>, node_type
     // If rel_dir points to a file (has an extension):
     // - the node whose name equals the file name is the File node
     // - everything beneath that is an Identifier/Value hierarchy under that file
-    if let Some(ext) = PathBuf::from(&rel_dir).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = rel_dir.extension().and_then(|e| e.to_str()) {
         let ext = ext.to_ascii_lowercase();
         if matches!(ext.as_str(), "txt" | "yml" | "yaml" | "gui" | "csv" | "dds" | "json" | "mod") {
             return NodeType::Identifier;
@@ -393,14 +397,14 @@ impl DefinitionNode {
     
     #[getter(name)]
     fn get_name(&self) -> String {
-        self.with_base_node(|node| node.name.read().unwrap().clone())
+        self.with_base_node(|node| node.name.clone())
     }
     #[setter(name)]
     fn set_name(&mut self, name: String) -> PyResult<()> {
-        let arena = self.arena.read().unwrap();
-        *arena.get(self.id).name.write().unwrap() = name;
+        let mut arena = self.arena.write().unwrap();
+        arena.get_mut(self.id).name = name;
         Ok(())
-    }
+    }   
     #[getter]
     fn get_type(&self) -> NodeType {
         self.with_base_node(|node| node.node_type.clone())
@@ -451,7 +455,7 @@ impl DefinitionNode {
     }
 
     pub fn get_rel_dir(&self) -> PathBuf {
-        self.with_base_node(|node| node.rel_dir.read().unwrap().clone())
+        self.with_base_node(|node| node.rel_dir.clone())
     }    
     #[setter(rel_dir)]
     pub fn set_rel_dir(&mut self, rel_dir: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -461,8 +465,8 @@ impl DefinitionNode {
         let path_obj = path_cls.call1((rel_dir,))?;
         let os_path = path_obj.call_method0(intern!(py, "as_posix"))?;
         let os_path_str: String = os_path.extract()?;
-        let arena = self.arena.read().unwrap();
-        *arena.get(self.id).rel_dir.write().unwrap() = PathBuf::from(os_path_str);
+        let mut arena = self.arena.write().unwrap();
+        arena.get_mut(self.id).rel_dir = PathBuf::from(os_path_str);
         Ok(())
     }    
     #[getter]
@@ -800,7 +804,7 @@ impl DefinitionNode {
             node.children.iter().map(|(k, v)| (k.clone(), *v)).collect()
         });
         
-        // Now acquire write lock on self's arena
+        // Now acquire write lock on self's arena and batch all insertions
         let mut arena = self.arena.write().unwrap();
         for (key, val) in other_children {
             arena.set_child(self.id, key, val, true);
@@ -836,7 +840,7 @@ impl DefinitionNode {
                         if *existing_sources != *new_sources && !NON_CONFLICTING_KEYWORDS.contains(&key.as_str()) {
                             // conflict detected
                             
-                            let rel_dir = arena.get(id).get_rel_dir();
+                            let rel_dir = arena.get(id).rel_dir.clone();
                             conflicts.insert(rel_dir.join(&key));
                             // println!("{}", rel_dir.join(&key).display());
                             
@@ -851,7 +855,7 @@ impl DefinitionNode {
                             let other_child: &BaseNode = arena.get(other_id);
                             assert!(child.has_conflict()&&other_child.has_conflict(), 
                                 "Conflict expected but not found for node: {:?}, sources: {:?}", 
-                                child.get_rel_dir().join(&child.get_name()),
+                                &child.rel_dir.join(&child.name),
                                 child.sources.read().unwrap().iter().collect::<Vec<&NodeId>>(),
                             );
                         }
