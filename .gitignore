@@ -6,7 +6,8 @@ __pycache__/
 .vscode/
 backup/
 .backup/
-
+tests/
+scripts/
 # Build files
 build/
 dist/
@@ -16,4 +17,5 @@ dist/
 
 # artifacts
 /profiles
+/logs
 settings.json
