@@ -1,3 +1,4 @@
+from tabnanny import check
 from .definition_tree import DefinitionNode, ParadoxModDefinitionTree
 from pathlib import Path
 
@@ -17,6 +18,8 @@ class DefinitionExtractor:
     language: str
     conflict_identifiers: list[DefinitionNode]
     tree: ParadoxModDefinitionTree
+    check_loc_conflicts: bool
+    check_script_conflicts: bool
     def __init__(self, workshop_dir: str|Path, mods_dir: str|Path, language: str) -> None: ...
     def enroll_mods(self, mod_dirs: list[ModData]) -> None: ...
     def extract_definitions(self, max_depth: int = 0) -> DefinitionNode: ...
