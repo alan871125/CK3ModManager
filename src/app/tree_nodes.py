@@ -15,6 +15,7 @@ class TreeNode:
         self.type: NodeType = node_type
         self.path: Path = path if path else Path("./")/name  # Full path to the folder/file (for easy opening)
         self.parent: Optional['TreeNode'] = parent
+        self.line: Optional[int] = None  # Line number if applicable
         if self.parent is not None:
             self.parent.add_child(self)
 
@@ -58,9 +59,10 @@ class ConflictTreeNodeEntry(ConflictTreeNode):
     @property
     def name(self) -> str:
         return self._node.name
-    @name.setter
-    def name(self, value: str):
-        pass
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {'name', 'line', 'path'}:
+            return
+        return super().__setattr__(name, value)
     @property
     def sources(self) -> Optional[list[str]]:
         if self._sources is None and (mod_sources:=self._node.mod_sources):
@@ -68,7 +70,7 @@ class ConflictTreeNodeEntry(ConflictTreeNode):
             self._sources = list(mod_names)
         return self._sources
     @property
-    def full_path(self) -> Path: 
+    def path(self) -> Path: 
         if self.type == NodeType.Identifier:
             return self._node.full_path.parent
         # for easy opening
@@ -101,6 +103,10 @@ class ErrorTreeNode(TreeNode):
         """Get line number if applicable"""
         if self.error_data and len(self.error_data) == 1:
             return next(iter(self.error_data.values())).line
+    @line.setter
+    def line(self, value: Optional[int]):
+        """Set line number"""
+        pass  # line is derived from error_data
     def child_count(self) -> int:
         """Get number of children"""
         return len(self.children)

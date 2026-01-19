@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 class ErrorTreeModel(QAbstractItemModel):
     """Model for lazy-loading error tree"""
-    _columns = ["File / Folder", "Error Type", "Line", "Log Line", "Related Object"]
+    _columns = ["File / Folder", "Related Object", "Error Type", "Line", "Log Line"]
     def __init__(self, error_analyzer: ErrorAnalyzer, parent=None):
         super().__init__(parent)
         self.analyzer:ErrorAnalyzer = error_analyzer
@@ -60,15 +60,10 @@ class ErrorTreeModel(QAbstractItemModel):
         if self.filtered_error_types is None:
             for mod_node in self._all_mod_nodes:
                 self.root_node.add_child(mod_node)
-            return
-        
+            return        
         # If showing none, don't add any mods
         if len(self.filtered_error_types) == 0:
             return
-        
-        # Build error type lookup once (instead of for every error)
-        error_type_map = {e.id: e.type for e in self.analyzer.errors}
-        
         # Add only mods that have at least one visible error
         for mod_node in self._all_mod_nodes:
             # Quick check: does this mod have any errors of the selected types?
@@ -77,7 +72,7 @@ class ErrorTreeModel(QAbstractItemModel):
             if mod_node.error_data is None:
                 continue
             for err, _ in mod_node.error_data.items():
-                error_type = error_type_map.get(err.id)
+                error_type = err.type
                 if error_type and error_type in self.filtered_error_types:
                     has_visible = True
                     visible_count += 1
@@ -173,7 +168,7 @@ class ErrorTreeModel(QAbstractItemModel):
                             # Store list of errors for this file
                             node.error_data = {}
                         
-                        parent.add_child(node)
+                        # parent.add_child(node) # Already added in __init__
                         node_map[full_path] = node
                     
                     parent = node_map[full_path]
@@ -206,7 +201,7 @@ class ErrorTreeModel(QAbstractItemModel):
                         path=error_file_path
                     )
                     error_node.error_data = {err: source}
-                    child.add_child(error_node)
+                    # child.add_child(error_node) # Already added in __init__
                 # Mark as loaded
                 child._children_loaded = True
             elif child.type == NodeType.Directory:
@@ -273,7 +268,7 @@ class ErrorTreeModel(QAbstractItemModel):
     
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         """Get number of columns"""
-        return 4  # File/Folder, Error Type, Line, Related Object
+        return len(self._columns)  # File/Folder, Error Type, Line, Related Object
     
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
         """Get data for display"""
@@ -281,29 +276,20 @@ class ErrorTreeModel(QAbstractItemModel):
             return QVariant()
         node: ErrorTreeNode = index.internalPointer()
         column = index.column()
-        err: ParsedError
+        err: ParsedError        
+        # ["File / Folder", "Error Type", "Related Object", "Line", "Log Line", ]
         if role == Qt.DisplayRole:
             try:
-                if column == 0:
-                    # File/Folder name
+                if column == 0:   # File/Folder name
                     return node.name
                 elif column == 1: # Error Type (only for error nodes) (Virtual nodes used to represent errors)
                     if node.type == NodeType.Virtual and node.error_data:
-                        err = list(node.error_data.keys())[0]
+                        err, err_source = list(node.error_data.items())[0]
                         return err.type
                     return ""
-                elif column == 2: # Line (only for error nodes)
-                    if node.type == NodeType.Virtual and node.line is not None:
-                        return node.line
-                    return "-"
-                elif column == 3: # Log Line (only for error nodes)
-                    if node.type == NodeType.Virtual and node.log_line is not None:
-                        return node.log_line
-                    return "-"
-                elif column == 4: # Related Object                
+                elif column == 2: # Related Object (only for error nodes)               
                     if node.type == NodeType.Virtual and node.error_data:
-                        err = list(node.error_data.keys())[0]
-                        err_source: Optional[ErrorSource] = node.error_data[err]
+                        err, err_source = list(node.error_data.items())[0]
                         if err_source:
                             return ', '.join(filter(None, [
                                 err_source.object,
@@ -312,6 +298,17 @@ class ErrorTreeModel(QAbstractItemModel):
                             ]))
                     elif node.error_count > 0:
                         return f"({node.error_count} errors)"
+                    return ""
+                elif column == 3: # Line (only for error nodes)
+                    if node.type == NodeType.Virtual and node.error_data:
+                        err, err_source = list(node.error_data.items())[0]
+                        if err_source and err_source.line is not None:
+                            return err_source.line
+                    return "" 
+                elif column == 4: # Log Line (only for error nodes)
+                    if node.type == NodeType.Virtual and node.error_data:
+                        err, err_source = list(node.error_data.items())[0]
+                        return err.log_line
                     return ""
             except IndexError as e:
                 logger.exception(f"IndexError in data({node.error_data}): {e}")

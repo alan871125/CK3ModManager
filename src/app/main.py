@@ -8,7 +8,7 @@ import PyQt5.QtWidgets as qt
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QModelIndex, QTimer
 from PyQt5.QtGui import QDropEvent, QCursor, QIcon
-
+from datetime import datetime
 from mod_analyzer.mod.descriptor import Mod
 from mod_analyzer.mod.mod_list import ModList
 from mod_analyzer.mod.manager import ModManager
@@ -17,19 +17,48 @@ from mod_analyzer.mod.mod_loader import update_workshop_mod_descriptor_files
 from mod_analyzer.error import patterns
 from mod_analyzer.error.analyzer import ErrorAnalyzer, ParsedError
 from app.mod_table import ModTableWidget, ModTableWidgetItem
-from app.conflict_model import ConflictTreeModel
+from app.conflict_model import ConflictTreeModelWIP, ConflictTreeModel
 from app.error_model import ErrorTreeModel
 from app.tree_nodes import ConflictTreeNodeEntry, ErrorTreeNode, ConflictTreeNode, TreeNode
 from app.workers import FileTreeWorker, ErrorAnalysisWorker
 from app.settings import Settings, SettingsDialog
 from app.game import GameLauncher
 from constants import MODS_DIR
+from app.tree_views import ConflictTreeWidget, ErrorTreeWidget
 
 logging.basicConfig(format='[%(asctime)s][%(levelname)s] %(message)s', level=logging.INFO)
 # Set up loggers
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logging.getLogger('mod_analyzer').setLevel(logging.DEBUG)
+
+def init_log_file(max_logs: int = 5) -> None:
+    """Initialize log file in logs/ directory with timestamped filename.
+    remove old log files exceeding max_logs.
+    """
+    existing_logs = sorted(Path("logs").glob("*.log"), key=os.path.getmtime)
+    for log_file in existing_logs[:-max_logs + 1]:
+        try:
+            log_file.unlink()
+        except Exception as e:
+            logger.error(f"Failed to delete old log file {log_file}: {e}")    
+    
+    # Add a logger to write a app.log file
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = Path(f"logs/{now}.log")
+    log_path.parent.mkdir(exist_ok=True)
+    log_path.write_text("")  # create empty log file
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(asctime)s][%(levelname)s] %(message)s')
+    file_handler.setFormatter(formatter)
+    root_logger = logging.getLogger()
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and str(getattr(h, 'baseFilename', '')).lower().endswith('app.log')
+        for h in root_logger.handlers
+    ):
+        root_logger.addHandler(file_handler)
 
 
 class QTextEditLogger(logging.Handler, QtCore.QObject):
@@ -101,25 +130,37 @@ class CK3ModManagerApp(qt.QMainWindow):
             self.file_tree_worker.wait()
         event.accept()
     
-    def initUI(self):
-        
+    def initUI(self):        
         # Central widget and main layout
         self.central_widget = qt.QWidget()
-        self.setCentralWidget(self.central_widget)
-        
+        self.setCentralWidget(self.central_widget)        
         self.main_layout = qt.QVBoxLayout(self.central_widget)
         
         # Top button panel
         self.create_top_buttons()
         
-        
         # Main vertical splitter (splits content and log)
         self.main_v_splitter = qt.QSplitter(Qt.Vertical)
         self.main_layout.addWidget(self.main_v_splitter)
         
-        # Main content area (now just the left panel, no right panel)
-        self.create_left_panel()
-        
+        # ----- Main content area -----
+        left_panel = self.create_left_panel()   # Left panel with mod list
+        right_panel = self.create_right_panel() # Right panel with analysis tabs        
+        # Tab widget with resizable splitter
+        self.tab_splitter = qt.QSplitter(Qt.Horizontal)
+        # Left tab widget - Mod List only
+        self.tab_splitter.addWidget(left_panel)
+        self.tab_splitter.addWidget(right_panel)
+        # Right side - Filter (hidable)
+        self.create_filters_panel()
+        self.toggle_filters_panel()
+        self.tab_splitter.addWidget(self.filters_panel_container)
+        # Set initial splitter sizes (mod list, analysis tabs, Filter)
+        self.tab_splitter.setStretchFactor(0, 3)  # Mod List
+        self.tab_splitter.setStretchFactor(1, 3)  # Error Analyzer/Conflict Table
+        self.tab_splitter.setStretchFactor(2, 1)  # Filters
+        self.main_v_splitter.addWidget(self.tab_splitter)
+        # ------------------------------
         # Create menu bar
         self.create_menu_bar()
         
@@ -145,15 +186,6 @@ class CK3ModManagerApp(qt.QMainWindow):
         help_action = qt.QAction("About", self)
         help_action.triggered.connect(self.show_help)
         help_menu.addAction(help_action)
-        
-        # doesn't actually work, will be removed
-        # tools_menu = menubar.addMenu("Tools")
-        # tools_menu_hide_action = qt.QAction("Hide Disabled Mods", self)
-        # tools_menu.addAction(tools_menu_hide_action)
-        # tools_menu_hide_action.triggered.connect(self.mod_table.toggle_hide_disabled_mods)    
-        # tools_menu_unhide_action = qt.QAction("Unhide Disabled Mods", self)
-        # tools_menu.addAction(tools_menu_unhide_action)
-        # tools_menu_unhide_action.triggered.connect(self.mod_table.toggle_unhide_disabled_mods)
         
     def create_top_buttons(self):
         """Create the top button panel"""
@@ -187,8 +219,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         button_layout.addWidget(self.analyze_errors_button)
         button_layout.addWidget(self.export_json_button)
         button_layout.addWidget(self.open_error_log_button)
-        button_layout.addStretch()
-        
+        button_layout.addStretch()        
         
         # Add progress bar
         self.progress_bar = qt.QProgressBar()
@@ -241,34 +272,29 @@ class CK3ModManagerApp(qt.QMainWindow):
         profile_layout.addStretch()
         left_layout.addLayout(profile_layout)
         
-        # Tab widget with resizable splitter
-        self.tab_splitter = qt.QSplitter(Qt.Horizontal)
-        
-        # Left tab widget - Mod List only
         self.mod_tab_widget = ModTableWidget(self.mod_manager)
-        self.tab_splitter.addWidget(self.mod_tab_widget)
+        left_layout.addWidget(self.mod_tab_widget)
+        return left_widget
         
-        # Middle tab widget - Error Analyzer and Conflict Table
-        # Create a container for actions, analysis tabs and filter toggle button
-        self.analysis_container = qt.QWidget()
-        analysis_container_layout = qt.QVBoxLayout(self.analysis_container)
-        analysis_container_layout.setContentsMargins(0, 0, 0, 0)
-        analysis_container_layout.setSpacing(5)
-        
-        # Add actions at the top
+    def create_right_panel(self):
+        """Create the right panel with Error Analyzer and Conflict Table tabs"""
+        right_widget = qt.QWidget()
+        right_layout = qt.QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(5)
         actions_layout = qt.QHBoxLayout()
         self.fix_all_button = qt.QPushButton("Fix All Encoding Errors")
         self.fix_all_button.clicked.connect(self.fix_all_encoding_errors)
         actions_layout.addWidget(self.fix_all_button)
         actions_layout.addStretch()
-        analysis_container_layout.addLayout(actions_layout)
+        right_layout.addLayout(actions_layout)
         
         self.analysis_tab_widget = qt.QTabWidget()
-        self.create_conflict_table_tab()
-        self.create_error_analyzer_tab()
-        analysis_container_layout.addWidget(self.analysis_tab_widget)
-        
-        # Add filter toggle button at bottom right
+        self.conflict_tree_widget = ConflictTreeWidget(self.mod_manager, self.settings, parent=self)
+        self.analysis_tab_widget.addTab(self.conflict_tree_widget, "Conflict Table")
+        self.error_tree_widget = ErrorTreeWidget(self.mod_manager, self.settings, parent=self)
+        self.analysis_tab_widget.addTab(self.error_tree_widget, "Error Analyzer")
+        right_layout.addWidget(self.analysis_tab_widget)
         button_layout = qt.QHBoxLayout()
         button_layout.addStretch()
         filter_label = qt.QLabel("Filter")
@@ -278,96 +304,8 @@ class CK3ModManagerApp(qt.QMainWindow):
         self.filter_toggle_button.clicked.connect(self.toggle_filters_panel)
         self.filter_toggle_button.setToolTip("Hide Filter")
         button_layout.addWidget(self.filter_toggle_button)
-        analysis_container_layout.addLayout(button_layout)
-        
-        self.tab_splitter.addWidget(self.analysis_container)
-        
-        # Right side - Filter (hidable)
-        self.create_filters_panel()
-        self.tab_splitter.addWidget(self.filters_panel_container)
-        
-        # Set initial splitter sizes (mod list, analysis tabs, Filter)
-        self.tab_splitter.setStretchFactor(0, 3)  # Mod List
-        self.tab_splitter.setStretchFactor(1, 3)  # Error Analyzer/Conflict Table
-        self.tab_splitter.setStretchFactor(2, 1)  # Filters
-        
-        left_layout.addWidget(self.tab_splitter)
-        
-        # Add left widget directly to main vertical splitter (no horizontal splitter needed)
-        self.main_v_splitter.addWidget(left_widget)
-        
-        # default untoggled filter panel
-        self.toggle_filters_panel()
-    
-    def create_error_analyzer_tab(self):
-        """Create the Error Analyzer tab with lazy loading tree view"""
-        error_analyzer_widget = qt.QWidget()
-        error_layout = qt.QVBoxLayout(error_analyzer_widget)
-        error_layout.setContentsMargins(5, 5, 5, 5)
-        
-        # Error analyzer tree view with Model/View architecture
-        self.error_tree = qt.QTreeView()
-        
-        # Configure tree appearance
-        self.error_tree.setAlternatingRowColors(True)
-        self.error_tree.setSelectionMode(qt.QAbstractItemView.ExtendedSelection)
-        self.error_tree.setUniformRowHeights(True)
-        
-        # Make columns resizable
-        header = self.error_tree.header()
-        header.setSectionResizeMode(qt.QHeaderView.Interactive)
-        header.setStretchLastSection(True)
-        
-        # Set column widths
-        self.error_tree.setColumnWidth(0, 400)  # File path
-        self.error_tree.setColumnWidth(1, 150)  # Error type
-        self.error_tree.setColumnWidth(2, 60)   # Line
-        
-        # Enable context menu (right-click menu)
-        self.error_tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.error_tree.customContextMenuRequested.connect(self.show_error_context_menu)
-        
-        # Note: selectionChanged signal will be connected after model is set
-        # in _populate_error_table() method
-        
-        error_layout.addWidget(self.error_tree)
-        
-        self.analysis_tab_widget.addTab(error_analyzer_widget, "Error Analyzer")
-    
-    def create_conflict_table_tab(self):
-        """Create the ConflictTable tab with lazy loading tree view"""
-        conflict_widget = qt.QWidget()
-        conflict_layout = qt.QVBoxLayout(conflict_widget)
-        conflict_layout.setContentsMargins(5, 5, 5, 5)
-        
-        # Conflict tree view with Model/View architecture
-        self.conflict_tree = qt.QTreeView()
-        
-        # Configure tree appearance
-        self.conflict_tree.setAlternatingRowColors(True)
-        self.conflict_tree.setSelectionMode(qt.QAbstractItemView.ExtendedSelection)
-        self.conflict_tree.setUniformRowHeights(True)
-        
-        # Make columns resizable
-        header = self.conflict_tree.header()
-        header.setSectionResizeMode(qt.QHeaderView.Interactive)
-        header.setStretchLastSection(True)
-        
-        # Set column widths
-        self.conflict_tree.setColumnWidth(0, 400)  # File/Def
-        self.conflict_tree.setColumnWidth(1, 150)  # Filename
-        self.conflict_tree.setColumnWidth(2, 80)   # Line
-        
-        # Enable context menu (right-click menu)
-        self.conflict_tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.conflict_tree.customContextMenuRequested.connect(self.show_conflict_context_menu)
-        
-        # Note: selectionChanged signal will be connected after model is set
-        # in populate_conflict_tree() method
-        
-        conflict_layout.addWidget(self.conflict_tree)
-        
-        self.analysis_tab_widget.addTab(conflict_widget, "ConflictTable")
+        right_layout.addLayout(button_layout)
+        return right_widget
     
     def create_filters_panel(self):
         """Create the hidable filters side panel"""
@@ -445,16 +383,16 @@ class CK3ModManagerApp(qt.QMainWindow):
     
     def _apply_error_filters_impl(self):
         """Internal implementation of apply_error_filters (called after debounce delay)"""
-        if not hasattr(self, 'error_tree') or not self.error_tree.model():
-            return
-        
+        error_tree = self.error_tree_widget.tree_view
+        if not error_tree.model():
+            return        
         # Show brief progress indicator for filtering
         qt.QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
         
         selected_types = self.get_selected_error_types()
         
         # Update the model's filter - much more efficient than hiding rows
-        model = self.error_tree.model()
+        model = error_tree.model()
         if hasattr(model, 'set_filter'):
             model.set_filter(selected_types if selected_types else set())  # type: ignore
             logger.debug(f"Applied filter: {len(selected_types)} error types selected")
@@ -472,24 +410,15 @@ class CK3ModManagerApp(qt.QMainWindow):
             '[%(asctime)s,%(msecs)03d][%(levelname)s] %(message)s',
             datefmt='%H:%M:%S'
         ))
-        logger.addHandler(self.logger)
+        root_logger = logging.getLogger()
+        if self.logger not in root_logger.handlers:
+            root_logger.addHandler(self.logger)
         # self.logs.setReadOnly(True)
         log_layout.addWidget(self.logger.widget)
         # Set minimum size for log group to prevent collapse
         log_group.setMinimumHeight(80)        
         # Add to vertical splitter instead of main layout
         self.main_v_splitter.addWidget(log_group)
-    
-    
-    
-    # def _update_mod_manager_load_order(self):
-    #     """Update ModManager's load order based on current table state"""
-    #     load_order = self._get_load_order()
-    #     self.mod_manager.set_load_order(load_order)
-    
-                
-                    
-    
     
     # Menu bar actions
     def open_settings(self):
@@ -586,15 +515,16 @@ class CK3ModManagerApp(qt.QMainWindow):
         
         # Create and set the lazy loading model
         model = ErrorTreeModel(self.analyzer)
-        self.error_tree.setModel(model)
+        error_tree = self.error_tree_widget.tree_view
+        error_tree.setModel(model)
         
         # Hide progress
         self.progress_bar.setVisible(False)
         qt.QApplication.restoreOverrideCursor()
         
         # Connect selection changed signal after model is set
-        if self.error_tree.selectionModel():
-            self.error_tree.selectionModel().selectionChanged.connect(self.on_error_selection_changed)
+        if error_tree.selectionModel():
+            error_tree.selectionModel().selectionChanged.connect(self.error_tree_widget.on_selection_changed)
         
         # Apply current filters
         self.apply_error_filters()
@@ -631,6 +561,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             self.error_worker.finished.connect(self._on_error_analysis_complete)
             self.error_worker.error.connect(self._on_error_analysis_error)
             self.error_worker.start()
+            
     def _on_error_analysis_complete(self):
         """Called when error analysis is complete"""
         self._populate_error_table()
@@ -721,67 +652,7 @@ class CK3ModManagerApp(qt.QMainWindow):
 
         logger.info("Launching game...")
         self.game_launcher.launch_game(exe_args=self.settings.exe_args)
-        
-    def on_error_selection_changed(self, selected, deselected):
-        """Handle selection change in error tree (Model/View architecture)"""
-        indexes = selected.indexes()
-        if not indexes:
-            return
-        
-        # Get the first selected index (column 0)
-        index = indexes[0]
-        if not index.isValid():
-            return
-        
-        model = self.error_tree.model()
-        if not model:
-            return
-        
-        # Get node from index
-        node = index.internalPointer()
-        if not node:
-            return
-        
-        # Store selected node for context menu actions
-        self.selected_error_node = node
-        
-        # Log selection
-        if node.type == "error" and node.error_data:
-            err_id, source = node.error_data
-            logger.info(f"Selected error in: {source.file if hasattr(source, 'file') else 'Unknown'}")
-        else:
-            # Parent node (mod, folder, or file)
-            logger.info(f"Selected: {node.name}")
-    
-    def on_conflict_selection_changed(self, selected, deselected):
-        """Handle selection change in conflict tree (Model/View architecture)"""
-        indexes = selected.indexes()
-        if not indexes:
-            return
-        
-        # Get the first selected index
-        index = indexes[0]
-        if not index.isValid():
-            return
-        
-        model = self.conflict_tree.model()
-        if not model:
-            return
-        
-        # Get node from index
-        node = index.internalPointer()
-        if not node:
-            return
-        
-        # Store selected node for context menu actions
-        self.selected_conflict_node = node
-        
-        # Log selection
-        if node.type == "identifier":
-            logger.debug("Selected conflict: %s :: %s", node.filename, node.name)
-        else:
-            # Parent node (mod, folder, or file)
-            logger.debug("Selected: %s", node.name)
+     
     
     def on_error_item_clicked(self, item: qt.QTreeWidgetItem, column: int):
         """Handle click on error tree item (legacy qt.QTreeWidget - deprecated)"""
@@ -802,240 +673,36 @@ class CK3ModManagerApp(qt.QMainWindow):
         message = item.text(2)
         
         logger.info(f"Selected conflict at line {line}: {element}")
-    
-    def show_error_context_menu(self, position):
-        """Show context menu for error tree (right-click menu)"""
-        # Get the item at the click position
-        index = self.error_tree.indexAt(position)
-        if not index.isValid():
-            return
-        
-        # Get the node to check if it's an actual error (not just a folder)
-        node = index.internalPointer()
-        if not node:
-            return
-        
-        # Create context menu
-        context_menu = qt.QMenu(self)
-        
-        # Add actions
-        open_file_action = context_menu.addAction("📁 Reveal in File Explorer")
-        open_file_action.triggered.connect(self.open_file)
-        
-        show_error_log_action = context_menu.addAction("📄 Show Line in error.log")
-        show_error_log_action.triggered.connect(self.show_line_in_error_log)
-        
-        open_mod_file_action = context_menu.addAction("📝 Open Line in Text Editor")
-        open_mod_file_action.triggered.connect(self.open_line_in_editor)
-        
-        context_menu.addSeparator()
-        
-        fix_selected_action = context_menu.addAction("🔧 Fix Selected Error")
-        fix_selected_action.triggered.connect(self.fix_selected_error)
-        
-        # Disable actions if this is not an actual error node
-        if node.type != NodeType.Virtual: # TODO: Add a Error Type
-            fix_selected_action.setEnabled(False)
-            show_error_log_action.setEnabled(False)
-            open_mod_file_action.setEnabled(False)
-        
-        # Show the menu at the cursor position
-        context_menu.exec_(self.error_tree.viewport().mapToGlobal(position))
-    
-    def show_conflict_context_menu(self, position):
-        """Show context menu for conflict tree (right-click menu)"""
-        # Get the item at the click position
-        index = self.conflict_tree.indexAt(position)
-        if not index.isValid():
-            return
-        
-        # Get the node to check if it's an actual conflict identifier
-        node = index.internalPointer()
-        if not node:
-            return
-        
-        # Create context menu
-        context_menu = qt.QMenu(self)
-        
-        # Add actions
-        open_file_action = context_menu.addAction("📁 Reveal in File Explorer")
-        open_file_action.triggered.connect(self.open_file)
-        
-        open_mod_file_action = context_menu.addAction("📝 Open line in Text Editor")
-        open_mod_file_action.triggered.connect(self.open_line_in_editor)
-        
-        # Disable actions if this is not an actual conflict identifier node
-        if node.type != NodeType.Identifier:
-            open_mod_file_action.setEnabled(False)
-        
-        # Show the menu at the cursor position
-        context_menu.exec_(self.conflict_tree.viewport().mapToGlobal(position))
-                    
+                        
     def populate_conflict_tree(self):
         """Populate conflict tree view with lazy loading model"""
         logger.info("Populating conflict tree...")
         
         # Create and set the lazy loading model
-        model = ConflictTreeModel(self.mod_manager)
-        self.conflict_tree.setModel(model)
+        if self.settings.active_conflict_scan:
+            model = ConflictTreeModelWIP(self.mod_manager)
+        else:
+            model = ConflictTreeModel(self.mod_manager)
+        conflict_tree = self.conflict_tree_widget.tree_view
+        conflict_tree.setModel(model)
         
         # Connect selection changed signal after model is set
-        if self.conflict_tree.selectionModel():
-            self.conflict_tree.selectionModel().selectionChanged.connect(self.on_conflict_selection_changed)
+        if conflict_tree.selectionModel():
+            conflict_tree.selectionModel().selectionChanged.connect(self.conflict_tree_widget.on_selection_changed)
         
         # Set column widths after setting model
-        self.conflict_tree.setColumnWidth(0, 400)  # File/Def
-        self.conflict_tree.setColumnWidth(1, 150)  # Filename
-        self.conflict_tree.setColumnWidth(2, 80)   # Line
+        conflict_tree.setColumnWidth(0, 400)  # File/Def
+        conflict_tree.setColumnWidth(1, 150)  # Filename
+        conflict_tree.setColumnWidth(2, 80)   # Line
         
         total_conflicts = len(self.mod_manager.conflict_identifiers)
         logger.info(f"Populated conflict tree with {total_conflicts} conflict definitions using lazy loading")
-        
-    # Right panel actions
-    def open_file(self) -> None:
-        """Open the selected file or folder"""
-        try:
-            path_to_open: Optional[Path] = None
-            
-            # Try error node first
-            if self.selected_error_node :
-                path_to_open = self.selected_error_node.path            
-            # Try conflict node
-            elif self.selected_conflict_node:
-                # Check if node has a path attribute
-                if isinstance(self.selected_conflict_node, ConflictTreeNodeEntry) and self.selected_conflict_node.full_path and self.selected_conflict_node.full_path.exists():
-                    path_to_open = self.selected_conflict_node.full_path
-                    if self.selected_conflict_node.type == NodeType.Identifier:
-                        # If it's an identifier, open the parent file
-                        path_to_open = path_to_open.parent
-                # Fallback: try to get path from filename
-                else:                    
-                    path_to_open = self.selected_conflict_node.path
-            if path_to_open is not None and path_to_open.parts[0] == "%CK3_MODS_DIR%":
-                path_to_open = MODS_DIR.joinpath(*path_to_open.parts[1:])
-            if path_to_open and path_to_open.exists():
-                # open it directly
-                os.startfile(path_to_open)
-                logger.info("Opened %s: %s", "file" if path_to_open.is_file() else "folder", path_to_open)
-                return
-            elif path_to_open:
-                logger.error(f"Path does not exist: {path_to_open}")
-                return
-            
-            logger.warning("No valid file or folder path found")
-        except Exception as e:
-            logger.error(f"Failed to open file/folder: {e}")
-    
-    def open_file_at_line(self, file_path: Path, line=0 , editor=None) -> None:        
-        """Open a file at a specific line number in the specified text editor"""
-        import shutil, subprocess
-        if editor is None:
-            pass
-        elif editor.lower() in ("notepadpp", "notepad++"):
-            if exe:=next(filter(lambda p:Path(p).exists(),[
-                shutil.which("notepad++") or
-                r"C:\Program Files\Notepad++\notepad++.exe",
-                r"C:\Program Files (x86)\Notepad++\notepad++.exe"
-            ])):
-                subprocess.Popen([exe, "-multiInst", f"-n{line}", f'{str(file_path)}'])
-                logger.info(f"Opened {file_path} at line {line} in Notepad++")
-                return
-        elif editor.lower() in ("vscode", "code"):
-            if exe:=shutil.which("code"):
-                subprocess.Popen([exe, "-g", f'{str(file_path)}:{line}'])
-                logger.info(f"Opened {file_path} at line {line} in VSCode")
-                return
-        logger.warning("Opening file without specific line number (editor not supported)")
-        return os.startfile(file_path)
-    
-    def show_line_in_error_log(self) -> None:
-        """Show line in error.log and open it in default text editor"""
-        try:
-            if not self.selected_error_node or self.selected_error_node.type != NodeType.Virtual:
-                logger.warning("Please select an error item first")
-                return            
-            if not self.selected_error_node.error_data:
-                logger.warning("No error data available")
-                return            
-            err, source = next(iter(self.selected_error_node.error_data.items()))
-            
-            # Find the error.log file
-            error_log_path = Path(self.settings.error_log_path)
-            
-            if not error_log_path.exists():
-                logger.error(f"error.log not found at: {error_log_path}")
-                return
-            self.open_file_at_line(
-                error_log_path, 
-                err.log_line or 0,
-                self.settings.text_editor               
-            )
-            
-            # Log the line number if available
-            if hasattr(source, 'log_line') and source.line:
-                logger.info(f"Opened error.log - Error at log line: {source.line}")
-            else:
-                logger.info(f"Opened error.log - Search for: {source.file if hasattr(source, 'file') else 'N/A'}")
-                
-        except Exception as e:
-            logger.error(f"Failed to open error.log: {e}")
-    
-    def open_line_in_editor(self) -> None:
-        """Open the mod file in default text editor at the specific line"""
-        try:
-            file_path: Optional[Path] = None
-            line_number: Optional[str] = None
-            # Try error node first
-            if self.selected_error_node :
-                file_path = self.selected_error_node.path
-                line_number = str(self.selected_error_node.line) if self.selected_error_node.line else None
-            # Try conflict node
-            elif self.selected_conflict_node:
-                # Check if node has a path attribute
-                if isinstance(self.selected_conflict_node, ConflictTreeNodeEntry) and self.selected_conflict_node.full_path and self.selected_conflict_node.full_path.exists():
-                    file_path = self.selected_conflict_node.full_path
-                    if self.selected_conflict_node.type == NodeType.Identifier:
-                        # If it's an identifier, open the parent file
-                        line_number = str(self.selected_conflict_node.line or "") or None
-                # Fallback: try to get path from filename
-                else:                    
-                    file_path = self.selected_conflict_node.path
-            if file_path is not None and file_path.parts[0] == "%CK3_MODS_DIR%":
-                file_path = MODS_DIR.joinpath(*file_path.parts[1:])
-            if not file_path:
-                logger.warning("No file path available")
-                return
-            
-            if not file_path.exists():
-                logger.error(f"File does not exist: {file_path}")
-                return
-            
-            # Open the file in default text editor
-            # Note: Windows doesn't support opening at specific line via os.startfile
-            # Users will need to manually navigate to the line
-            self.open_file_at_line(
-                file_path, 
-                int(line_number or 0),
-                self.settings.text_editor               
-            )
-            
-            if line_number:
-                logger.info(f"Opened file: {file_path} (Navigate to line: {line_number})")
-            else:
-                logger.info(f"Opened file: {file_path}")
-                
-        except Exception as e:
-            logger.error(f"Failed to open mod file: {e}")
-    
-    def fix_selected_error(self):
-        """Fix the selected error"""
-        logger.info("Fixing selected error...")
-        # TODO: Implement error fixing
     
     def fix_all_encoding_errors(self):
         """Fix all encoding errors"""
         logger.info("Fixing all encoding errors...")
         # TODO: Implement fixing all encoding errors
+
     @property
     def existing_profiles(self):
         """Generator for existing mod profiles"""
@@ -1045,6 +712,7 @@ class CK3ModManagerApp(qt.QMainWindow):
         for profile_path in profiles_dir.iterdir():
             if profile_path.is_dir():
                 yield profile_path.name
+
     def load_mods(self):
         """Load mods from ModManager"""
         logger.info("Loading mods...")
@@ -1054,7 +722,6 @@ class CK3ModManagerApp(qt.QMainWindow):
         #     enabled_only=self.settings.enabled_only,
         # )
         profile = self.profile_combo.currentText()
-        
         
         # Populate table from ModManager.mod_list
         load_order: list[str] = self.mod_manager.mod_list.load_order
@@ -1107,6 +774,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             self.mod_table.setItem(row, 8, mod_dir_item)
 
         logger.info(f"Loaded {len(load_order)} mods")
+        
     def create_new_profile(self):
         """Create a new mod profile."""
         logger.info("Creating new mod profile... ")
@@ -1140,8 +808,6 @@ class CK3ModManagerApp(qt.QMainWindow):
             self.profile_combo.setCurrentText(profile_name)
             logger.info(f"Created new profile: {profile_name}")
         
-        
-        
     def load_profile(self):
         """Load a mod profile from file and apply to the mod list."""
         profile_name = self.profile_combo.currentText()
@@ -1173,6 +839,7 @@ class CK3ModManagerApp(qt.QMainWindow):
             logger.debug(v._sort_index, v.enabled, k, v.load_order)            
 
 if __name__ == "__main__":
+    init_log_file()
     app = qt.QApplication(sys.argv)
     mainWin = CK3ModManagerApp()
     mainWin.show()

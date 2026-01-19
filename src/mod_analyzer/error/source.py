@@ -13,6 +13,7 @@ class ErrorSource:
     line: int|None = field(default_factory = int)
     
     mod_sources: list[Mod] = field(default_factory=list, repr=False) # more than one source mod means unclear origin
+    summary: str = field(default='NOT_FOUND', repr=False, init=False) # shows whether the source is successfully analyzed
     def is_solved(self) -> bool:
         return len(self.mod_sources) == 1 and self.file is not None 
     @classmethod
@@ -38,7 +39,10 @@ class ErrorSource:
             )
             sources.append(s2)
         return sources
-
+    def add_mod_source(self, mod:Mod) -> None:
+        if mod not in self.mod_sources:
+            self.mod_sources.append(mod)
+            self.summary = 'FOUND'
     def __setattr__(self, name: str, value: Any) -> None:
         if name == 'file' and value is not None:
             value = Path(value)

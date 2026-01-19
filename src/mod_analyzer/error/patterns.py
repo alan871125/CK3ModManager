@@ -133,7 +133,7 @@ regex = DualAccessDict(
     # # Error: "Failed to read key reference: ([^"]+)" in file: "([^\s]+)" near line: (\d+)
     # FAILED_TO_READ_KEY_REFERENCE = r'Error: "(?P<message>(Failed to read key reference: [^\"]\n?)+)" in file: "(?P<file>[^\"]*)" near line: (?P<line>\d+)',
     # pdx_persistent_reader.cpp:216
-    FAILED_TO_READ_KEY_REFERENCE = r"Failed to read key reference: (?P<key>[^:]*): ([^,]*), .*line: (?P<line>\d+)",
+    FAILED_TO_READ_KEY_REFERENCE = r'Failed to read key reference: (?P<key>[^:]*): ([^,]*), .*line: (?P<line>\d+)( in file: (?P<file>[^"]+))',
     # FAILED_TO_READ_KEY_REFERENCE = r'Error: "(?P<message>(Failed to read key reference: ([^:]+): ([^,]+), .*line: \d+\n?)+)" in file: "(?P<file>[^"]+)" near line: \d+',
     # # UNEXPECTED_TOKEN = r'Error: "Unexpected token: (?P<token>[^,]+), near line: (?P<line>\d+)" in file: "(?P<file>[^\"]+)" near line: \d+', # not sure what the 2nd refers to
     # # UNKNOWN_TRIGGER = r'Error: "Unknown trigger: (?P<trigger>[^,]+), near line: (?P<line>\d+)" in file: "(?P<file>[^\"]+)" near line: \d+', # line seems to match
@@ -165,7 +165,7 @@ regex = DualAccessDict(
     INVALID_LANDED_TITLE = r"Failed to fetch a valid landed title '(?P<value>[^']+)' at location 'file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)'",
     CHARACTER_INTERACTION_FILTER_ERROR = r"(?P<message>.*) at file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\)",
     # jomini_script_system.cpp:303
-    SCRIPT_ERROR = r'(file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)]+)\))(\[args#\d+\])?',
+    SCRIPT_ERROR = r'(file: (?P<file>[^\n]+) line: (?P<line>\d+) \((?P<obj>[^\)\[]+)\))(\[args#\d+\])?',
     
 )
 source_related_errors = {

@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QGroupBox, QHBoxLayout,
-    QCheckBox, QSpinBox, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox
+    QCheckBox, QSpinBox, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox, QTabWidget, QWidget
 )
 
 from constants import MODS_DIR, CK3_DOCS_DIR, WORKSHOP_DIR, CK3_INSTALL_DIR, CK3_GAME_SETTINGS_DIR
@@ -54,6 +54,8 @@ class Settings:
     check_conflict_on_startup: bool = False
     game_language: str = get_game_language()
     text_editor: str = "notepad++"
+    # Experimental features
+    active_conflict_scan: bool = False
     
     def asdict(self) -> dict:
         return asdict(self)
@@ -83,13 +85,13 @@ class SettingsDialog(QDialog):
     def init_ui(self):
         """Initialize the settings UI"""
         layout = QVBoxLayout(self)
+        tabs = QTabWidget()
+        layout.addWidget(tabs)
         
-        # Create form layout for settings
-        form_layout = QFormLayout()
+        # General Settings Tab
+        general_tab = QWidget()
+        general_layout = QFormLayout(general_tab)
         
-        # General Settings Group
-        general_group = QGroupBox("General Settings")
-        general_layout = QFormLayout(general_group)
         self.check_conflict_on_startup = QCheckBox()
         self.check_conflict_on_startup.setChecked(self.settings.check_conflict_on_startup)
         general_layout.addRow("Auto check mod conflicts on Startup", self.check_conflict_on_startup)
@@ -99,18 +101,18 @@ class SettingsDialog(QDialog):
         self.max_workers_spinbox.setMaximum(32)
         self.max_workers_spinbox.setValue(self.settings.max_workers)
         general_layout.addRow("Max worker threads:", self.max_workers_spinbox)
-        layout.addWidget(general_group)
+        tabs.addTab(general_tab, "General")
         
-        # Mod List Settings Group
-        mods_group = QGroupBox("Mod List Settings")
-        mods_layout = QFormLayout(mods_group)
+        # Mod List Settings Tab
+        mods_tab = QWidget()
+        mods_layout = QFormLayout(mods_tab)
         self.profile_mods_only = QCheckBox()
         self.profile_mods_only.setToolTip("If checked, only mods listed in the profile will be loaded.")
         self.profile_mods_only.setChecked(self.settings.profile_only)
         mods_layout.addRow("Load Only Enabled Mods:", self.profile_mods_only)
-        layout.addWidget(mods_group)
+        tabs.addTab(mods_tab, "Mod List")
         
-        # ========== Paths Settings Group ==========
+        # ========== Paths Settings Tab ==========
         paths_group = QGroupBox("Paths")
         paths_layout = QFormLayout(paths_group)
         
@@ -145,9 +147,10 @@ class SettingsDialog(QDialog):
         self.error_log_path_button.clicked.connect(self.browse_error_log_path)
         error_log_layout.addWidget(self.error_log_path_button)
         paths_layout.addRow("Error Log Path:", error_log_layout)
+        tabs.addTab(paths_group, "Paths")
 
         # ========== Launcher Settings Group ==========
-        launcher_group = QGroupBox("Launcher Settings")
+        launcher_group = QGroupBox("Launcher")
         launcher_layout = QFormLayout(launcher_group)
         launcher_path_layout = QHBoxLayout()
         self.launcher_path_edit = QLineEdit()
@@ -162,9 +165,20 @@ class SettingsDialog(QDialog):
         self.exe_args_edit = QLineEdit()
         self.exe_args_edit.setText(self.settings.exe_args)
         launcher_layout.addRow("Launcher Executable Arguments:", self.exe_args_edit)
+        paths_layout.addRow(launcher_group)
+        # ========== Experimental ==========
+        experimental_conflict_group = QGroupBox("Conflict")
+        experimental_conflict_layout = QFormLayout(experimental_conflict_group)
+        self.active_conflict_scan_checkbox = QCheckBox()
+        self.active_conflict_scan_checkbox.setToolTip("If checked, use the active conflict scanning method (WIP). (need restart to take effect)")
+        self.active_conflict_scan_checkbox.setChecked(self.settings.active_conflict_scan)
+        experimental_conflict_layout.addRow("Use Active Conflict Scanning:", self.active_conflict_scan_checkbox)
+        tabs.addTab(experimental_conflict_group, "Experimental")
         # ========================================
-        layout.addWidget(paths_group)
-        layout.addWidget(launcher_group)
+        
+        
+        # layout.addWidget(paths_group)
+        # layout.addWidget(launcher_group)
         layout.addStretch()
         # Dialog buttons (OK/Cancel)
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -237,4 +251,5 @@ class SettingsDialog(QDialog):
         self.settings.error_log_path = self.error_log_path_edit.text()
         self.settings.launcher_settings_path = self.launcher_path_edit.text()
         self.settings.exe_args = self.exe_args_edit.text()
+        self.settings.active_conflict_scan = self.active_conflict_scan_checkbox.isChecked()
         self.settings.save("settings.json")
